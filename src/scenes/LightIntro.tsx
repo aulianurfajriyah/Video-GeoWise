@@ -1,7 +1,9 @@
 import React from "react";
 import { AbsoluteFill, Easing, Img, interpolate, Sequence, staticFile, useCurrentFrame } from "remotion";
 import { Backdrop, BlurIn, SilverText } from "../components";
+import { Video } from "@remotion/media";
 import { FootageSlot, MacBook } from "../MacBook";
+import { PIT_GRADE } from "../intro/pitGrade";
 import { EASE_OUT, fontFamily } from "../theme";
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
@@ -10,6 +12,33 @@ const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 const DRONE = [0, 420] as const;
 const SHOULDER = [400, 730] as const;
 const REVEAL = 710;
+
+/* Drone footage: three open-pit shots (1080p30 cuts of the clips in /video),
+   cross-dissolved, each colour-graded per frame to one neutral white balance. */
+const PIT_XFADE = 15;
+const PIT_SHOTS = [
+  { key: "a", file: "intro/pit_a.mp4", from: 0, len: 215 }, // spiral pit, tilting up to the farmland
+  { key: "b", file: "intro/pit_b.mp4", from: 200, len: 140 }, // quarry pan-up to the forest
+  { key: "c", file: "intro/pit_c.mp4", from: 325, len: 115 }, // reclaimed pit by the coast
+] as const;
+
+const PitShot: React.FC<{ shot: (typeof PIT_SHOTS)[number] }> = ({ shot }) => {
+  const frame = useCurrentFrame();
+  const id = React.useId().replace(/:/g, "");
+  const grade = PIT_GRADE[shot.key];
+  const gn = grade[Math.min(grade.length - 1, Math.max(0, frame))];
+  const o = shot.from === 0 ? 1 : interpolate(frame, [0, PIT_XFADE], [0, 1], clamp);
+  return (
+    <AbsoluteFill style={{ opacity: o }}>
+      <svg width={0} height={0} style={{ position: "absolute" }}>
+        <filter id={id} colorInterpolationFilters="sRGB">
+          <feColorMatrix type="matrix" values={`${gn.r} 0 0 0 0  0 ${gn.g} 0 0 0  0 0 ${gn.b} 0 0  0 0 0 1 0`} />
+        </filter>
+      </svg>
+      <Video src={staticFile(shot.file)} muted style={{ width: "100%", height: "100%", objectFit: "cover", filter: `url(#${id})` }} />
+    </AbsoluteFill>
+  );
+};
 
 /* Where the Mac screen sits in the over-the-shoulder clip (px, 1920x1080),
    so the push-in lands on it. Adjust once the real clip is in place. */
@@ -205,7 +234,11 @@ export const LightIntroScene: React.FC = () => {
       {/* 1 · Drone over the open pit */}
       <Sequence name="Drone · open pit" from={DRONE[0]} durationInFrames={DRONE[1] - DRONE[0] + 20}>
         <AbsoluteFill style={{ scale: droneScale }}>
-          <FootageSlot file="intro/drone.mp4" label="Drone · open-pit mine" />
+          {PIT_SHOTS.map((shot) => (
+            <Sequence key={shot.key} from={shot.from} durationInFrames={shot.len} layout="none">
+              <PitShot shot={shot} />
+            </Sequence>
+          ))}
         </AbsoluteFill>
         <AbsoluteFill style={{ background: "linear-gradient(0deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 55%)" }} />
         <FootageCaption lines={["Every mine eventually closes."]} delay={30} out={190} />

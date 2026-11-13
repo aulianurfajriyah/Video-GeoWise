@@ -49,6 +49,7 @@ const MacStage: React.FC<{
 };
 
 /* ---------- Beat 2 ---------- */
+const INTEGRATED_MAC = { left: 700, top: 190, w: 1120 };
 export const LightIntegratedScene: React.FC = () => {
   const theme = useTheme();
   return (
@@ -67,8 +68,8 @@ export const LightIntegratedScene: React.FC = () => {
           </div>
         </WipeIn>
       </div>
-      <MacStage left={700} top={190} turn={-18}>
-        <MacBook width={1120} src="recordings/takeF_layers.mp4" trimBefore={30} />
+      <MacStage left={INTEGRATED_MAC.left} top={INTEGRATED_MAC.top} turn={-18} enter={false}>
+        <MacBook width={INTEGRATED_MAC.w} src="recordings/takeF_layers.mp4" trimBefore={30} />
       </MacStage>
     </AbsoluteFill>
   );
@@ -462,6 +463,8 @@ const CAM_KEYS: { f: number; x: number; y: number }[] = [
 const CAM_ZOOM = 1.75;
 const CAM_TARGET = { x: 650, y: 560 }; // focus lands left of centre, leaving room for the cards
 const ZOOM_IN: [number, number] = [26, 80];
+// Pull back to the wide shot so the badges sit beside the Mac before the flip.
+const ZOOM_OUT: [number, number] = [482, 520];
 
 const useCamera = () => {
   const smooth = Easing.inOut(Easing.cubic);
@@ -470,7 +473,7 @@ const useCamera = () => {
     const fx = interpolate(frame, fs, CAM_KEYS.map((k) => k.x), { ...clamp, easing: smooth });
     const fy = interpolate(frame, fs, CAM_KEYS.map((k) => k.y), { ...clamp, easing: smooth });
     const focus = rec(fx, fy);
-    const k = interpolate(frame, ZOOM_IN, [0, 1], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
+    const k = interpolate(frame, [...ZOOM_IN, ...ZOOM_OUT], [0, 1, 1, 0], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
     const z = 1 + (CAM_ZOOM - 1) * k;
     // screen = stage * z + t ; at k = 1 the focus sits on CAM_TARGET, at k = 0 it is the identity.
     const tx = k * (CAM_TARGET.x - focus.x * z);
@@ -552,6 +555,30 @@ const ZoneRow: React.FC<{ name: string; ha: number; color: string; p: number }> 
   );
 };
 
+const TotalCard: React.FC<{ p: number }> = ({ p }) => (
+          <div
+            style={{
+              width: COL.w,
+              height: COL.h,
+              boxSizing: "border-box",
+              borderRadius: 26,
+              padding: "0 28px",
+              background: "#111113",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              boxShadow: "0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.12)",
+            }}
+          >
+            <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.7 }}>Total site</div>
+            <div style={{ fontSize: 40, fontWeight: 800, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
+              {fmt(TOTAL * p)}
+              <span style={{ fontSize: 22, opacity: 0.6, fontWeight: 600 }}> ha</span>
+            </div>
+          </div>
+);
+
 export const LightAllocationScene: React.FC = () => {
   const frame = useCurrentFrame();
   const cam = useCamera();
@@ -574,30 +601,277 @@ export const LightAllocationScene: React.FC = () => {
         </PopOutBadge>
       ))}
       <PopOutBadge at={TOTAL_AT} from={src(TOTAL_AT, TOTAL_FROM)} slot={{ x: COL.left, y: COL.top + 4 * (COL.h + COL.gap) + 10 }}>
-        {(p) => (
-          <div
-            style={{
-              width: COL.w,
-              height: COL.h,
-              boxSizing: "border-box",
-              borderRadius: 26,
-              padding: "0 28px",
-              background: "#111113",
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              boxShadow: "0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.12)",
-            }}
-          >
-            <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.7 }}>Total site</div>
-            <div style={{ fontSize: 40, fontWeight: 800, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
-              {fmt(TOTAL * p)}
-              <span style={{ fontSize: 22, opacity: 0.6, fontWeight: 600 }}> ha</span>
-            </div>
-          </div>
-        )}
+        {(p) => <TotalCard p={p} />}
       </PopOutBadge>
+    </AbsoluteFill>
+  );
+};
+
+/* ---------- 4 → 2: close, turn around, open ---------- */
+export const MAC_FLIP_FRAMES = 70;
+
+/** A 3D MacBook: hinged lid with thickness + aluminium base with keyboard, trackpad and a soft contact shadow. */
+const MacModel: React.FC<{
+  width: number;
+  image: string;
+  /** Lid angle in degrees: 0 = upright, negative = folding towards the keyboard. */
+  lidAngle: number;
+}> = ({ width, image, lidAngle }) => {
+  const logoId = React.useId();
+  const bezel = width * 0.019;
+  const sw = width - bezel * 2;
+  const lidH = sw * (982 / 1512) + bezel * 2.2;
+  const radius = width * 0.034;
+  const baseW = width * 1.02;
+  const baseH = width * 0.022; // slab thickness
+  const baseL = (width - baseW) / 2;
+  const D = lidH * 0.92; // base depth
+  const lidT = width * 0.008; // lid thickness
+  const face: React.CSSProperties = { position: "absolute", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
+  const edge = "linear-gradient(180deg, #E4E6EA 0%, #B9BDC3 100%)";
+  const keyRows = [14, 14, 14, 13, 12, 10];
+  return (
+    <div style={{ position: "absolute", left: 0, top: 0, width, height: lidH, transformStyle: "preserve-3d" }}>
+      {/* Contact shadow on the floor */}
+      <div
+        style={{
+          ...face,
+          left: baseL - baseW * 0.06,
+          top: lidH + baseH,
+          width: baseW * 1.12,
+          height: D * 1.12,
+          transformOrigin: "50% 0",
+          transform: `rotateX(90deg) translateY(${-D * 0.04}px)`,
+          background: "radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.12) 55%, rgba(0,0,0,0) 100%)",
+          filter: "blur(18px)",
+        }}
+      />
+      {/* Base deck */}
+      <div
+        style={{
+          ...face,
+          left: baseL,
+          top: lidH,
+          width: baseW,
+          height: D,
+          transformOrigin: "50% 0",
+          transform: "rotateX(90deg)",
+          borderRadius: `${radius * 0.4}px ${radius * 0.4}px ${radius}px ${radius}px`,
+          background: "linear-gradient(180deg, #CFD2D6 0%, #E3E5E8 18%, #E9EAED 100%)",
+          boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.7)",
+          overflow: "hidden",
+        }}
+      >
+        {/* Hinge */}
+        <div style={{ position: "absolute", left: baseW * 0.12, right: baseW * 0.12, top: 0, height: D * 0.025, background: "linear-gradient(180deg,#3A3B3F,#6B6E73)" }} />
+        {/* Speaker grilles */}
+        {[0.035, 0.885].map((x) => (
+          <div
+            key={x}
+            style={{
+              position: "absolute",
+              left: baseW * x,
+              width: baseW * 0.08,
+              top: D * 0.07,
+              height: D * 0.4,
+              backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.28) 1.2px, transparent 1.6px)",
+              backgroundSize: "9px 9px",
+            }}
+          />
+        ))}
+        {/* Keyboard */}
+        <div
+          style={{
+            position: "absolute",
+            left: baseW * 0.13,
+            right: baseW * 0.13,
+            top: D * 0.07,
+            height: D * 0.42,
+            borderRadius: 10,
+            background: "rgba(0,0,0,0.10)",
+            padding: 8,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            boxSizing: "border-box",
+          }}
+        >
+          {keyRows.map((n, r) => (
+            <div key={r} style={{ flex: r === 0 ? 0.6 : 1, display: "flex", gap: 6, justifyContent: "center" }}>
+              {Array.from({ length: n }).map((_, k) => (
+                <div
+                  key={k}
+                  style={{
+                    flex: r === 5 && k === Math.floor(n / 2) ? 5 : 1,
+                    borderRadius: 6,
+                    background: "linear-gradient(180deg,#2A2B2F,#17181B)",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+                  }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+        {/* Trackpad */}
+        <div
+          style={{
+            position: "absolute",
+            left: baseW * 0.3,
+            right: baseW * 0.3,
+            top: D * 0.56,
+            height: D * 0.36,
+            borderRadius: 18,
+            background: "linear-gradient(180deg, #E2E4E7, #D8DADE)",
+            boxShadow: "inset 0 0 0 1.5px rgba(0,0,0,0.07)",
+          }}
+        />
+      </div>
+      {/* Base edges: front, back, left, right */}
+      <div
+        style={{
+          ...face,
+          left: baseL,
+          top: lidH,
+          width: baseW,
+          height: baseH,
+          transform: `translateZ(${D}px)`,
+          borderRadius: `0 0 ${baseH}px ${baseH}px`,
+          background: "linear-gradient(180deg, #F2F3F5 0%, #D2D5D9 50%, #A6AAB0 100%)",
+        }}
+      >
+        {/* Thumb notch */}
+        <div style={{ position: "absolute", left: baseW * 0.43, width: baseW * 0.14, top: 0, height: baseH * 0.4, borderRadius: `0 0 ${baseH}px ${baseH}px`, background: "#BFC2C7" }} />
+      </div>
+      <div style={{ ...face, left: baseL, top: lidH, width: baseW, height: baseH, transform: "rotateY(180deg)", background: edge }} />
+      <div style={{ ...face, left: baseL, top: lidH, width: D, height: baseH, transformOrigin: "0 50%", transform: "rotateY(-90deg)", background: edge }} />
+      <div style={{ ...face, left: baseL + baseW - D, top: lidH, width: D, height: baseH, transformOrigin: "100% 50%", transform: "rotateY(90deg)", background: edge }} />
+      {/* Lid, hinged on its bottom edge */}
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width,
+          height: lidH,
+          transformStyle: "preserve-3d",
+          transformOrigin: "50% 100%",
+          transform: `rotateX(${lidAngle}deg)`,
+        }}
+      >
+        <div style={{ ...face, left: 0, top: 0 }}>
+          <MacBook width={width} image={image} showBase={false} />
+        </div>
+        {/* Lid edges (top, left, right) */}
+        <div style={{ ...face, left: radius, top: -lidT, width: width - radius * 2, height: lidT, transformOrigin: "50% 100%", transform: "rotateX(90deg)", background: edge }} />
+        <div style={{ ...face, left: -lidT, top: radius, width: lidT, height: lidH - radius, transformOrigin: "100% 50%", transform: "rotateY(-90deg)", background: edge }} />
+        <div style={{ ...face, left: width, top: radius, width: lidT, height: lidH - radius, transformOrigin: "0 50%", transform: "rotateY(90deg)", background: edge }} />
+        {/* Back of the lid (aluminium) */}
+        <div
+          style={{
+            ...face,
+            left: 0,
+            top: 0,
+            width,
+            height: lidH,
+            borderRadius: radius,
+            transform: `translateZ(${-lidT}px) rotateY(180deg)`,
+            background:
+              "radial-gradient(120% 90% at 30% 20%, rgba(255,255,255,0.75) 0%, rgba(255,255,255,0) 55%), linear-gradient(160deg, #E9EBEE 0%, #CDD0D5 55%, #B4B8BE 100%)",
+            boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.65), inset 0 -10px 30px rgba(0,0,0,0.06)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {/* Apple logo, polished like the real lid */}
+          <svg width={width * 0.1} height={width * 0.1} viewBox="0 0 24 24" style={{ filter: "drop-shadow(0 1px 0 rgba(255,255,255,0.6))" }}>
+            <defs>
+              <linearGradient id={logoId} x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stopColor="#F7F8FA" />
+                <stop offset="0.5" stopColor="#B7BBC1" />
+                <stop offset="1" stopColor="#8E9298" />
+              </linearGradient>
+            </defs>
+            <path
+              fill={`url(#${logoId})`}
+              d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"
+            />
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export const LightMacFlip: React.FC = () => {
+  const frame = useCurrentFrame();
+  const io = Easing.bezier(0.65, 0, 0.35, 1);
+  const W = MAC_BOX.w;
+  const lidH = (W - W * 0.038) * (982 / 1512) + W * 0.019 * 2.2;
+  const from = { left: MAC_BOX.left, top: MAC_BOX.top, w: MAC_BOX.w, rotY: 0 }; // beat 4's last frame
+  // The model is scaled about the hinge centre, so place it where beat 2's (smaller) Mac has its hinge.
+  const endScale = INTEGRATED_MAC.w / W;
+  const to = {
+    left: INTEGRATED_MAC.left + INTEGRATED_MAC.w / 2 - W / 2,
+    top: INTEGRATED_MAC.top - lidH * (1 - endScale),
+    w: INTEGRATED_MAC.w,
+    rotY: 0,
+  };
+
+  // Frames 0–8 and 62–70 sit under the crossfades, so the laptop holds still there.
+  const lift = interpolate(frame, [8, 26, 46, 62], [0, 1, 1, 0], { ...clamp, easing: io });
+  // Lid folds half way (about 55°), never shut.
+  const half = interpolate(frame, [10, 28, 42, 60], [0, 1, 1, 0], { ...clamp, easing: io });
+  // One full turn while the lid is half closed.
+  const spin = interpolate(frame, [20, 52], [0, 360], { ...clamp, easing: io });
+  const move = interpolate(frame, [8, 62], [0, 1], { ...clamp, easing: io });
+  const left = lerp(from.left, to.left, move);
+  const top = lerp(from.top, to.top, move);
+  const scale = lerp(1, endScale, move) * (1 - 0.4 * lift);
+  // Head-on at both ends (matches the flat mockup under the crossfades), looking down mid-move.
+  const pitch = -24 * lift;
+  const lidAngle = -55 * half + 6 * lift;
+  // Screen content swaps while the screen faces away (back of the lid towards camera).
+  const image = spin < 180 ? "stills/alloc.png" : "stills/layers_start.png";
+  const badgesOut = interpolate(frame, [8, 22], [0, 1], { ...clamp, easing: Easing.in(Easing.cubic) });
+  // While in 3D the laptop is pulled to the middle of the frame (hinge at y 600).
+  const dx = (960 - (left + W / 2)) * lift;
+  const dy = (600 - (top + lidH)) * lift;
+  const cx = left + W / 2 + dx;
+  const cy = top + lidH / 2 + dy;
+  const D = lidH * 0.92;
+
+  return (
+    <AbsoluteFill style={{ fontFamily }}>
+      <Backdrop />
+      {/* Beat 4's badges slide away as the lid starts to fold */}
+      <div style={{ position: "absolute", inset: 0, opacity: 1 - badgesOut, transform: `translateX(${badgesOut * 260}px)` }}>
+        {ZONES.map((z, i) => (
+          <div key={z.name} style={{ position: "absolute", left: COL.left, top: COL.top + i * (COL.h + COL.gap) }}>
+            <ZoneRow name={z.name} ha={z.ha} color={z.color} p={1} />
+          </div>
+        ))}
+        <div style={{ position: "absolute", left: COL.left, top: COL.top + 4 * (COL.h + COL.gap) + 10 }}>
+          <TotalCard p={1} />
+        </div>
+      </div>
+      <AbsoluteFill style={{ perspective: 3200, perspectiveOrigin: `${cx}px ${cy}px` }}>
+        <div
+          style={{
+            position: "absolute",
+            left,
+            top,
+            width: W,
+            height: lidH,
+            transformStyle: "preserve-3d",
+            // Pivot at the middle of the base so the laptop turns on the spot.
+            transformOrigin: `${W / 2}px ${lidH}px ${D / 2}px`,
+            transform: `translate(${dx}px, ${dy}px) scale3d(${scale}, ${scale}, ${scale}) rotateX(${pitch}deg) rotateY(${lerp(from.rotY, to.rotY, move) + spin}deg)`,
+          }}
+        >
+          <MacModel width={W} image={image} lidAngle={lidAngle} />
+        </div>
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };

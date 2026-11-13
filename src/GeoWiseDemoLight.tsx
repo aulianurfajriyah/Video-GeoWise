@@ -8,6 +8,8 @@ import { LayersScene } from "./scenes/LayersScene";
 import {
   LightAllocationScene,
   LightIntegratedScene,
+  LightMacFlip,
+  MAC_FLIP_FRAMES,
   LightOneClickScene,
   LightOutroScene,
   LightThreeDScene,
@@ -40,8 +42,13 @@ export const GeoWiseDemoLight: React.FC = () => {
           <TransitionSeries.Sequence name="4 · Suitability map" durationInFrames={525}>
             <LightAllocationScene />
           </TransitionSeries.Sequence>
-          <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
-          <TransitionSeries.Sequence name="2 · Integrated analysis" durationInFrames={330}>
+          <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 8 })} />
+          {/* Close the lid, turn the Mac around, open it on the next beat. */}
+          <TransitionSeries.Sequence name="4→2 · Mac flip" durationInFrames={MAC_FLIP_FRAMES}>
+            <LightMacFlip />
+          </TransitionSeries.Sequence>
+          <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 8 })} />
+          <TransitionSeries.Sequence name="2 · Integrated analysis" durationInFrames={261}>
             <LightIntegratedScene />
           </TransitionSeries.Sequence>
           <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
