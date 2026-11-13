@@ -440,69 +440,164 @@ export const LightOneClickScene: React.FC = () => {
 };
 
 /* ---------- Beat 4 ---------- */
+// The Mac sits where the One click scene's push lands it (MacStage left 110 / top 230, width 1130).
+const MAC_BOX = { left: 110, top: 230, w: 1130 };
+const REC_K = 1087 / 1920; // recording px → stage px (screen width 1087 inside the bezel)
+const rec = (x: number, y: number) => ({ x: 131.5 + x * REC_K, y: 251.5 + y * REC_K });
+
+// Cursor path read from takeE_alloc.mp4, in scene frames (trimBefore 15, playbackRate 0.5 → rec t = 0.5 + f/60).
+// The camera follows a slightly eased version of it.
+const CAM_KEYS: { f: number; x: number; y: number }[] = [
+  // One move per hover, then a still hold (no drifting between stops).
+  { f: 0, x: 1100, y: 430 },
+  { f: 110, x: 870, y: 500 }, // Agriculture
+  { f: 175, x: 870, y: 500 },
+  { f: 225, x: 815, y: 770 }, // Forestry
+  { f: 300, x: 815, y: 770 },
+  { f: 360, x: 875, y: 260 }, // Recreational Park
+  { f: 425, x: 875, y: 260 },
+  { f: 475, x: 1450, y: 310 }, // donut
+  { f: 525, x: 1450, y: 310 },
+];
+const CAM_ZOOM = 1.75;
+const CAM_TARGET = { x: 650, y: 560 }; // focus lands left of centre, leaving room for the cards
+const ZOOM_IN: [number, number] = [26, 80];
+
+const useCamera = () => {
+  const smooth = Easing.inOut(Easing.cubic);
+  return (frame: number) => {
+    const fs = CAM_KEYS.map((k) => k.f);
+    const fx = interpolate(frame, fs, CAM_KEYS.map((k) => k.x), { ...clamp, easing: smooth });
+    const fy = interpolate(frame, fs, CAM_KEYS.map((k) => k.y), { ...clamp, easing: smooth });
+    const focus = rec(fx, fy);
+    const k = interpolate(frame, ZOOM_IN, [0, 1], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
+    const z = 1 + (CAM_ZOOM - 1) * k;
+    // screen = stage * z + t ; at k = 1 the focus sits on CAM_TARGET, at k = 0 it is the identity.
+    const tx = k * (CAM_TARGET.x - focus.x * z);
+    const ty = k * (CAM_TARGET.y - focus.y * z);
+    return { z, tx, ty, toScreen: (p: { x: number; y: number }) => ({ x: p.x * z + tx, y: p.y * z + ty }) };
+  };
+};
+
 const ZONES = [
-  { name: "Forestry", ha: 200.85, color: colors.forestry, delay: 120 },
-  { name: "Agroforestry", ha: 102.15, color: colors.agriculture, delay: 160 },
-  { name: "Recreation", ha: 12.6, color: colors.recreation, delay: 200 },
-  { name: "Industrial", ha: 0, color: colors.industrial, delay: 240 },
+  // `at` = when the cursor hovers that zone (or legend row); `from` = where on the recording it pops out.
+  { name: "Agriculture", ha: 102.15, color: colors.agriculture, at: 80, from: { x: 876, y: 490 } },
+  { name: "Forestry", ha: 200.85, color: colors.forestry, at: 200, from: { x: 812, y: 800 } },
+  { name: "Recreation", ha: 12.6, color: colors.recreation, at: 352, from: { x: 878, y: 222 } },
+  { name: "Industrial", ha: 0, color: colors.industrial, at: 440, from: { x: 1700, y: 327 } },
 ];
 const TOTAL = 314.85;
+const TOTAL_AT = 462;
+const TOTAL_FROM = { x: 1538, y: 300 }; // donut centre
 const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const ZoneCard: React.FC<(typeof ZONES)[number]> = ({ name, ha, color, delay }) => {
+const COL = { left: 1350, top: 250, gap: 16, h: 88, w: 500 };
+
+/** Glass badge that pops out of the Mac screen at `from` and flies to its slot beside the MacBook. */
+const PopOutBadge: React.FC<{
+  at: number;
+  from: { x: number; y: number };
+  slot: { x: number; y: number };
+  children: (p: number) => React.ReactNode;
+  w?: number;
+}> = ({ at, from, slot, children, w = COL.w }) => {
   const frame = useCurrentFrame();
-  const theme = useTheme();
-  const p = interpolate(frame, [delay, delay + 50], [0, 1], { ...clamp, easing: ease });
+  const fly = interpolate(frame, [at, at + 30], [0, 1], { ...clamp, easing: Easing.bezier(0.2, 0.9, 0.25, 1) });
+  const grow = interpolate(frame, [at, at + 30], [0, 1], { ...clamp, easing: Easing.bezier(0.34, 1.45, 0.64, 1) });
+  const o = interpolate(frame, [at, at + 8], [0, 1], clamp);
+  const fill = interpolate(frame, [at + 12, at + 42], [0, 1], { ...clamp, easing: ease });
+  if (frame < at) return null;
+  // Badge centre travels from the screen point to the slot centre, lifting off the glass (shadow + tilt).
+  const cx = lerp(from.x, slot.x + w / 2, fly);
+  const cy = lerp(from.y, slot.y + COL.h / 2, fly) - Math.sin(fly * Math.PI) * 60;
+  const lift = Math.sin(fly * Math.PI);
   return (
-    <PopIn delay={delay} fromX={0} fromY={-40}>
-      <GlassBadge style={{ width: 500, padding: "18px 24px", borderRadius: 26 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ width: 52, height: 52, borderRadius: 14, background: color, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ width: 18, height: 18, borderRadius: 5, background: "rgba(255,255,255,0.9)" }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>{name}</div>
-            <div style={{ marginTop: 8, height: 6, borderRadius: 3, background: "rgba(0,0,0,0.07)" }}>
-              <div style={{ width: `${(ha / TOTAL) * 100 * p}%`, height: 6, borderRadius: 3, background: color }} />
-            </div>
-          </div>
-          <div style={{ fontSize: 32, fontWeight: 800, fontVariantNumeric: "tabular-nums", minWidth: 150, textAlign: "right" }}>
-            {fmt(ha * p)}
-            <span style={{ fontSize: 20, color: theme.muted, fontWeight: 600 }}> ha</span>
+    <div
+      style={{
+        position: "absolute",
+        left: cx - w / 2,
+        top: cy - COL.h / 2,
+        width: w,
+        opacity: o,
+        transform: `perspective(1600px) rotateY(${(1 - fly) * -18}deg) scale(${0.15 + 0.85 * grow + lift * 0.06})`,
+        transformOrigin: "50% 50%",
+        filter: `drop-shadow(0 ${18 + lift * 30}px ${30 + lift * 30}px rgba(0,0,0,${0.12 + lift * 0.12}))`,
+      }}
+    >
+      {children(fill)}
+    </div>
+  );
+};
+
+const ZoneRow: React.FC<{ name: string; ha: number; color: string; p: number }> = ({ name, ha, color, p }) => {
+  const theme = useTheme();
+  return (
+    <GlassBadge style={{ width: COL.w, height: COL.h, boxSizing: "border-box", padding: "18px 24px", borderRadius: 26 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ width: 52, height: 52, borderRadius: 14, background: color, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ width: 18, height: 18, borderRadius: 5, background: "rgba(255,255,255,0.9)" }} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 28, fontWeight: 700 }}>{name}</div>
+          <div style={{ marginTop: 8, height: 6, borderRadius: 3, background: "rgba(0,0,0,0.07)" }}>
+            <div style={{ width: `${(ha / TOTAL) * 100 * p}%`, height: 6, borderRadius: 3, background: color }} />
           </div>
         </div>
-      </GlassBadge>
-    </PopIn>
+        <div style={{ fontSize: 32, fontWeight: 800, fontVariantNumeric: "tabular-nums", minWidth: 150, textAlign: "right" }}>
+          {fmt(ha * p)}
+          <span style={{ fontSize: 20, color: theme.muted, fontWeight: 600 }}> ha</span>
+        </div>
+      </div>
+    </GlassBadge>
   );
 };
 
 export const LightAllocationScene: React.FC = () => {
   const frame = useCurrentFrame();
-  const theme = useTheme();
-  const total = interpolate(frame, [40, 110], [0, TOTAL], { ...clamp, easing: ease });
+  const cam = useCamera();
+  const c = cam(frame);
+  const slot = (i: number) => ({ x: COL.left, y: COL.top + i * (COL.h + COL.gap) });
+  // Pop-out sources are fixed where the zone was on screen at the moment of the hover.
+  const src = (at: number, p: { x: number; y: number }) => cam(at).toScreen(rec(p.x, p.y));
   return (
     <AbsoluteFill style={{ fontFamily }}>
       <Backdrop />
-      <MacStage left={110} top={230} turn={16} enter={false}>
-        <MacBook width={1130} src="recordings/takeE_alloc.mp4" trimBefore={15} playbackRate={0.5} />
-      </MacStage>
-      <div style={{ position: "absolute", left: 1350, top: 170, display: "flex", flexDirection: "column", gap: 16 }}>
-        <Eyebrow delay={20}>Initial suitability map</Eyebrow>
-        <BlurIn delay={34}>
-          <div style={{ color: theme.text, fontSize: 92, fontWeight: 800, letterSpacing: "-0.04em", fontVariantNumeric: "tabular-nums" }}>
-            {fmt(total)}
-            <span style={{ fontSize: 38, color: theme.muted, fontWeight: 600 }}> ha</span>
+      {/* Camera: zooms the whole MacBook (bezel included) and follows the cursor. */}
+      <AbsoluteFill style={{ transformOrigin: "0 0", transform: `translate(${c.tx}px, ${c.ty}px) scale(${c.z})` }}>
+        <MacStage left={MAC_BOX.left} top={MAC_BOX.top} turn={16} enter={false}>
+          <MacBook width={MAC_BOX.w} src="recordings/takeE_alloc.mp4" trimBefore={15} playbackRate={0.5} />
+        </MacStage>
+      </AbsoluteFill>
+      {ZONES.map((z, i) => (
+        <PopOutBadge key={z.name} at={z.at} from={src(z.at, z.from)} slot={slot(i)}>
+          {(p) => <ZoneRow name={z.name} ha={z.ha} color={z.color} p={p} />}
+        </PopOutBadge>
+      ))}
+      <PopOutBadge at={TOTAL_AT} from={src(TOTAL_AT, TOTAL_FROM)} slot={{ x: COL.left, y: COL.top + 4 * (COL.h + COL.gap) + 10 }}>
+        {(p) => (
+          <div
+            style={{
+              width: COL.w,
+              height: COL.h,
+              boxSizing: "border-box",
+              borderRadius: 26,
+              padding: "0 28px",
+              background: "#111113",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              boxShadow: "0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.12)",
+            }}
+          >
+            <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.7 }}>Total site</div>
+            <div style={{ fontSize: 40, fontWeight: 800, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
+              {fmt(TOTAL * p)}
+              <span style={{ fontSize: 22, opacity: 0.6, fontWeight: 600 }}> ha</span>
+            </div>
           </div>
-        </BlurIn>
-        <BlurIn delay={60}>
-          <div style={{ color: theme.muted, fontSize: 28, fontWeight: 500, marginTop: -8, marginBottom: 12, width: 500 }}>
-            Area calculated for every recommended zone
-          </div>
-        </BlurIn>
-        {ZONES.map((z) => (
-          <ZoneCard key={z.name} {...z} />
-        ))}
-      </div>
+        )}
+      </PopOutBadge>
     </AbsoluteFill>
   );
 };
