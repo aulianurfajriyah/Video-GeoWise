@@ -13,14 +13,13 @@ const DRONE = [0, 540] as const;
 const SHOULDER = [520, 850] as const;
 const REVEAL = 830;
 
-/* Drone footage: clips 1, 2 (reversed), 3, 4 from /video, cut to 1080p30,
+/* Drone footage: clips 1, 2 (reversed), 3 from /video, cut to 1080p30,
    cross-dissolved, each colour-graded per frame to one neutral white balance. */
 const PIT_XFADE = 15;
 const PIT_SHOTS = [
   { key: "s1", file: "intro/pit_s1.mp4", from: 0, len: 150 }, // 1 · pit beside the forested coastline
-  { key: "s2", file: "intro/pit_s2.mp4", from: 135, len: 155 }, // 2 · reversed: forest and sky tilting down onto the quarry
-  { key: "s3", file: "intro/pit_s3.mp4", from: 275, len: 150 }, // 3 · top-down, haul trucks on the bench road
-  { key: "s4", file: "intro/pit_s4.mp4", from: 410, len: 150 }, // 4 · top-down over the pit and its ponds
+  { key: "s2", file: "intro/pit_s2.mp4", from: 135, len: 215 }, // 2 · reversed: forest and sky tilting down onto the quarry
+  { key: "s3", file: "intro/pit_s3.mp4", from: 335, len: 225 }, // 3 · top-down, haul trucks on the bench road
 ] as const;
 
 const PitShot: React.FC<{ shot: (typeof PIT_SHOTS)[number] }> = ({ shot }) => {
@@ -242,10 +241,10 @@ export const LightIntroScene: React.FC = () => {
           ))}
         </AbsoluteFill>
         <AbsoluteFill style={{ background: "linear-gradient(0deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 55%)" }} />
-        <FootageCaption lines={["Every mine eventually closes."]} delay={30} out={250} />
+        <FootageCaption lines={["Every mine eventually closes."]} delay={30} out={320} />
         <FootageCaption
           lines={["What comes next?", "Planning it means juggling scattered data."]}
-          delay={280}
+          delay={340}
           out={DRONE[1]}
         />
    
