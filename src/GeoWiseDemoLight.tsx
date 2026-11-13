@@ -32,17 +32,17 @@ export const GeoWiseDemoLight: React.FC = () => {
           <TransitionSeries.Sequence name="1 · Layers" durationInFrames={330}>
             <LayersScene />
           </TransitionSeries.Sequence>
+          {/* Hard cut: the One click scene opens on the Layers scene's last frame. */}
+          <TransitionSeries.Sequence name="3 · One click" durationInFrames={250}>
+            <LightOneClickScene />
+          </TransitionSeries.Sequence>
+          <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 25 })} />
+          <TransitionSeries.Sequence name="4 · Suitability map" durationInFrames={525}>
+            <LightAllocationScene />
+          </TransitionSeries.Sequence>
           <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
           <TransitionSeries.Sequence name="2 · Integrated analysis" durationInFrames={330}>
             <LightIntegratedScene />
-          </TransitionSeries.Sequence>
-          <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
-          <TransitionSeries.Sequence name="3 · One click" durationInFrames={180}>
-            <LightOneClickScene />
-          </TransitionSeries.Sequence>
-          <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
-          <TransitionSeries.Sequence name="4 · Suitability map" durationInFrames={600}>
-            <LightAllocationScene />
           </TransitionSeries.Sequence>
           <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
           <TransitionSeries.Sequence name="5 · Beyond the map" durationInFrames={180}>

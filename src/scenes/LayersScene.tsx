@@ -4,30 +4,14 @@ import { Backdrop } from "../components";
 import { colors, EASE_OUT, fontFamily, useTheme } from "../theme";
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
-const S = 560; // plane size
+export const S = 560; // plane size
 
-type Layer = {
+export type Layer = {
   key: string;
   label: string;
-  group: "data" | "terrain";
   color: string;
   appear: number;
   Art: React.FC;
-};
-
-const LandCover: React.FC = () => {
-  const palette = ["#2E7D4F", "#3E9B5E", "#7FA65A", "#B9A46A", "#8C6E4A", "#5FAF7A"];
-  const cells = [];
-  const n = 8;
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      const c = palette[Math.floor(random(`lc${x}-${y}`) * palette.length)];
-      cells.push(
-        <rect key={`${x}-${y}`} x={(x * S) / n} y={(y * S) / n} width={S / n + 1} height={S / n + 1} fill={c} opacity={0.82} />,
-      );
-    }
-  }
-  return <>{cells}</>;
 };
 
 const Roads: React.FC = () => (
@@ -68,8 +52,9 @@ const Power: React.FC = () => {
   );
 };
 
+const ELEV_COLOR = "#3FA796";
 const Elevation: React.FC = () => (
-  <g fill="none" stroke="#9FE3D2" strokeWidth={2.5} opacity={0.9}>
+  <g fill="none" stroke={ELEV_COLOR} strokeWidth={3} opacity={0.9}>
     {Array.from({ length: 9 }).map((_, i) => {
       const r = 30 + i * 32;
       return (
@@ -86,46 +71,67 @@ const Elevation: React.FC = () => (
   </g>
 );
 
-const Slope: React.FC = () => (
+const Slope: React.FC = () => {
+  // Unique per instance: a duplicate id in a hidden (premounted) copy blanks the gradient.
+  const id = `slopeG-${React.useId().replace(/:/g, "")}`;
+  return (
   <g>
     <defs>
-      <linearGradient id="slopeG" x1="0" y1="1" x2="1" y2="0">
+      <linearGradient id={id} x1="0" y1="1" x2="1" y2="0">
         <stop offset="0" stopColor="#2E9E5B" />
         <stop offset="0.45" stopColor="#B8D24A" />
         <stop offset="0.7" stopColor="#F2B233" />
         <stop offset="1" stopColor="#D9412F" />
       </linearGradient>
     </defs>
-    <rect width={S} height={S} fill="url(#slopeG)" opacity={0.5} />
+    <rect width={S} height={S} fill={`url(#${id})`} opacity={0.5} />
     {Array.from({ length: 14 }).map((_, i) => (
       <line key={i} x1={i * 44} y1={S} x2={i * 44 + 160} y2={0} stroke="rgba(0,0,0,0.18)" strokeWidth={2} />
     ))}
   </g>
-);
+  );
+};
 
-const Proximity: React.FC = () => (
-  <g fill="none" stroke="#67E8F9" opacity={0.85}>
-    {[
-      [140, 160],
-      [420, 400],
-    ].map(([cx, cy], k) =>
-      Array.from({ length: 6 }).map((_, i) => (
-        <circle key={`${k}-${i}`} cx={cx} cy={cy} r={24 + i * 36} strokeWidth={3 - i * 0.35} />
-      )),
-    )}
-    <circle cx={140} cy={160} r={9} fill="#67E8F9" />
-    <circle cx={420} cy={400} r={9} fill="#67E8F9" />
-  </g>
-);
+// Settlements: clusters of houses.
+const VILLAGE_COLOR = "#D9653B";
+const Village: React.FC = () => {
+  const clusters: [number, number, number][] = [
+    [130, 300, 7],
+    [390, 140, 6],
+    [430, 450, 8],
+  ];
+  const houses: React.ReactNode[] = [];
+  clusters.forEach(([cx, cy, n], k) => {
+    for (let i = 0; i < n; i++) {
+      const a = random(`va${k}-${i}`) * Math.PI * 2;
+      const r = 14 + random(`vr${k}-${i}`) * 52;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      houses.push(
+        <g key={`${k}-${i}`} transform={`translate(${x} ${y})`}>
+          <rect x={-11} y={-4} width={22} height={16} rx={2} fill={VILLAGE_COLOR} />
+          <path d="M-14 -3 L0 -15 L14 -3 Z" fill={VILLAGE_COLOR} />
+        </g>,
+      );
+    }
+  });
+  return (
+    <g>
+      {clusters.map(([cx, cy], k) => (
+        <circle key={k} cx={cx} cy={cy} r={82} fill={VILLAGE_COLOR} opacity={0.12} />
+      ))}
+      {houses}
+    </g>
+  );
+};
 
-const LAYERS: Layer[] = [
-  { key: "lc", label: "Land cover", group: "data", color: "#5FAF7A", appear: 14, Art: LandCover },
-  { key: "rd", label: "Roads", group: "data", color: colors.road, appear: 40, Art: Roads },
-  { key: "rv", label: "Rivers", group: "data", color: colors.river, appear: 64, Art: Rivers },
-  { key: "pw", label: "Power networks", group: "data", color: colors.power, appear: 88, Art: Power },
-  { key: "el", label: "Elevation", group: "terrain", color: "#9FE3D2", appear: 128, Art: Elevation },
-  { key: "sl", label: "Slope", group: "terrain", color: "#F2B233", appear: 152, Art: Slope },
-  { key: "px", label: "Proximity", group: "terrain", color: "#67E8F9", appear: 176, Art: Proximity },
+export const LAYERS: Layer[] = [
+  { key: "rd", label: "Roads", color: colors.road, appear: 14, Art: Roads },
+  { key: "rv", label: "Rivers", color: colors.river, appear: 44, Art: Rivers },
+  { key: "pw", label: "Power lines", color: colors.power, appear: 74, Art: Power },
+  { key: "vl", label: "Villages", color: VILLAGE_COLOR, appear: 104, Art: Village },
+  { key: "sl", label: "Slope", color: "#F2B233", appear: 134, Art: Slope },
+  { key: "el", label: "Elevation", color: ELEV_COLOR, appear: 164, Art: Elevation },
 ];
 
 const COLLAPSE = [222, 262] as const;
@@ -239,26 +245,6 @@ const LabelRow: React.FC<{ layer: Layer }> = ({ layer }) => {
   );
 };
 
-const GroupTitle: React.FC<{ delay: number; children: React.ReactNode }> = ({ delay, children }) => {
-  const frame = useCurrentFrame();
-  const theme = useTheme();
-  return (
-    <div
-      style={{
-        opacity: interpolate(frame, [delay, delay + 16], [0, 1], clamp),
-        fontSize: 22,
-        fontWeight: 700,
-        letterSpacing: "0.22em",
-        textTransform: "uppercase",
-        color: theme.muted,
-        marginBottom: 6,
-      }}
-    >
-      {children}
-    </div>
-  );
-};
-
 export const LayersScene: React.FC = () => {
   const frame = useCurrentFrame();
   const theme = useTheme();
@@ -276,14 +262,8 @@ export const LayersScene: React.FC = () => {
   return (
     <AbsoluteFill style={{ fontFamily }}>
       <Backdrop />
-      <div style={{ position: "absolute", left: 150, top: 230, opacity: labelsOut, display: "flex", flexDirection: "column", gap: 22 }}>
-        <GroupTitle delay={8}>Spatial data</GroupTitle>
-        {LAYERS.filter((l) => l.group === "data").map((l) => (
-          <LabelRow key={l.key} layer={l} />
-        ))}
-        <div style={{ height: 26 }} />
-        <GroupTitle delay={122}>Terrain analysis</GroupTitle>
-        {LAYERS.filter((l) => l.group === "terrain").map((l) => (
+      <div style={{ position: "absolute", left: 150, top: 330, opacity: labelsOut, display: "flex", flexDirection: "column", gap: 30 }}>
+        {LAYERS.map((l) => (
           <LabelRow key={l.key} layer={l} />
         ))}
       </div>

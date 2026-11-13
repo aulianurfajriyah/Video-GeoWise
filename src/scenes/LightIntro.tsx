@@ -45,7 +45,7 @@ const FootageCaption: React.FC<{ lines: string[]; delay: number; out: number }> 
 
 /* Notification-style file cards stacking in (scattered data). */
 const FILES = [
-  { name: "LandCover_2024.shp", meta: "Shapefile · land cover", color: "#2E9E5B", glyph: "▦" },
+  { name: "Permukiman_Desa.shp", meta: "Shapefile · villages", color: "#D9653B", glyph: "⌂" },
   { name: "DEMNAS_clip.tif", meta: "GeoTIFF · elevation", color: "#0EA5A4", glyph: "⛰" },
   { name: "Jalan_RBI.geojson", meta: "GeoJSON · roads", color: "#E2483D", glyph: "⟋" },
   { name: "Sungai.gpkg", meta: "GeoPackage · rivers", color: "#3B9BF2", glyph: "≈" },
