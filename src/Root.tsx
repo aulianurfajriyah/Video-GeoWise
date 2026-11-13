@@ -16,7 +16,7 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="GeoWiseDemoLight"
         component={GeoWiseDemoLight}
-        durationInFrames={3600}
+        durationInFrames={3720}
         fps={30}
         width={1920}
         height={1080}

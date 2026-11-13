@@ -17,8 +17,8 @@ import {
 } from "./scenes/LightScenes";
 
 /**
- * Light (Mac) version — 2:00 at 30 fps (3600 frames).
- * 0:00–0:35  problem context (drone → over-the-shoulder → GeoWise opens on the Mac)
+ * Light (Mac) version — 2:04 at 30 fps (3720 frames).
+ * 0:00–0:39  problem context (drone → over-the-shoulder → GeoWise opens on the Mac)
  * then the same six voice-over beats as the dark cut, every recording shown
  * full-screen inside a MacBook Pro frame (no UI cropping).
  */
@@ -27,7 +27,7 @@ export const GeoWiseDemoLight: React.FC = () => {
     <ThemeContext.Provider value={lightTheme}>
       <AbsoluteFill style={{ backgroundColor: "#F3F2EF" }}>
         <TransitionSeries>
-          <TransitionSeries.Sequence name="0 · Problem context" durationInFrames={1065}>
+          <TransitionSeries.Sequence name="0 · Problem context" durationInFrames={1185}>
             <LightIntroScene />
           </TransitionSeries.Sequence>
           <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
