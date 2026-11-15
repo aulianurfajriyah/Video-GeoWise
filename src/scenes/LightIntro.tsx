@@ -1,19 +1,41 @@
 import React from "react";
-import { AbsoluteFill, Easing, Img, interpolate, Sequence, staticFile, useCurrentFrame } from "remotion";
-import { Backdrop, BlurIn, SilverText } from "../components";
+import { AbsoluteFill, Easing, interpolate, Sequence, staticFile, useCurrentFrame } from "remotion";
+import { Backdrop, BlurIn } from "../components";
 import { Video } from "@remotion/media";
-import { FootageSlot, MacBook } from "../MacBook";
+import { MacBook } from "../MacBook";
+import { CANVAS, DESK, desktopCamera, MacDesktop, WINDOW_VIDEO } from "./MacDesktop";
+import { HomeWithBoundary } from "./UploadParts";
 import { PIT_GRADE } from "../intro/pitGrade";
 import { EASE_OUT, fontFamily } from "../theme";
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 
-/* Timing (frames @30fps) of the 35.5 s problem-context intro. */
+/* Timing (frames @30fps) of the problem-context intro. */
 const DRONE = [0, 540] as const;
-const SHOULDER = [520, 850] as const;
-const REVEAL = 830;
-/** Intro length in the voice-over cut: the reveal holds while "Meet GeoWise…" is read. */
-export const INTRO_FRAMES = 1327;
+/** The MacBook shot (GeoWise open) is fully on screen from here; the desktop sequence before
+ * it pulls back into it. */
+export const REVEAL = DESK.end;
+/** Intro length: a short hold on the MacBook (the next line starts as it lands). */
+export const INTRO_FRAMES = REVEAL + 110;
+/** "Meet GeoWise…" starts as the GeoWise window opens on the desktop. */
+export const MEET_VO_AT = DESK.meetVO;
+
+/* The MacBook in the reveal shot, and its screen rect (frame px) once settled:
+   1240 px lid, 150 px down, scaled 0.92 about its centre. */
+const MAC_W = 1240;
+const MAC_SCREEN = (() => {
+  const bezel = MAC_W * 0.019;
+  const sw = MAC_W - bezel * 2;
+  const sh = (sw * 982) / 1512;
+  const h = sh + bezel * 2.2 + MAC_W * 0.028;
+  const top = (1080 - (h + 150)) / 2 + 150;
+  const left = (1920 - MAC_W) / 2;
+  const c = { x: 960, y: top + h / 2 };
+  const k = 0.92;
+  return { x: c.x + (left + bezel - c.x) * k, y: c.y + (top + bezel - c.y) * k, w: sw * k, h: sh * k };
+})();
+/** Camera for the desktop canvas when it sits exactly on the MacBook screen. */
+const CAM_MAC = { s: MAC_SCREEN.w / CANVAS.w, tx: MAC_SCREEN.x, ty: MAC_SCREEN.y };
 
 /* Drone footage: clips 1, 2 (reversed), 3 from /video, cut to 1080p30,
    cross-dissolved, each colour-graded per frame to one neutral white balance. */
@@ -42,9 +64,6 @@ const PitShot: React.FC<{ shot: (typeof PIT_SHOTS)[number] }> = ({ shot }) => {
   );
 };
 
-/* Where the Mac screen sits in the over-the-shoulder clip (px, 1920x1080),
-   so the push-in lands on it. Adjust once the real clip is in place. */
-const SHOULDER_SCREEN = { x: 1060, y: 470 };
 
 /** Big white caption over footage, with a soft dark gradient for legibility. */
 const FootageCaption: React.FC<{ lines: string[]; delay: number; out: number }> = ({ lines, delay, out }) => {
@@ -142,164 +161,70 @@ const FileStack: React.FC<{ start: number; out: number }> = ({ start, out }) => 
   );
 };
 
-/* GeoWise app icon on a light macOS-like desktop, clicked open. */
-const AppIcon: React.FC<{ size: number }> = ({ size }) => (
-  <div
-    style={{
-      width: size,
-      height: size,
-      borderRadius: size * 0.23,
-      background: "linear-gradient(180deg, #FFFFFF 0%, #ECECEE 100%)",
-      boxShadow: "0 10px 24px rgba(0,0,0,0.22), inset 0 -2px 4px rgba(0,0,0,0.06)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-    }}
-  >
-    <Img src={staticFile("logo-a.svg")} style={{ width: size * 0.62, height: size * 0.62 }} />
-  </div>
-);
-
-const Desktop: React.FC<{ w: number; h: number; start: number }> = ({ w, h, start }) => {
-  const frame = useCurrentFrame();
-  const CLICK = start + 70;
-  const t = interpolate(frame, [start + 20, CLICK - 4], [0, 1], { ...clamp, easing: Easing.bezier(0.33, 1, 0.68, 1) });
-  const cx = interpolate(t, [0, 1], [w * 0.82, w * 0.5 + 6]);
-  const cy = interpolate(t, [0, 1], [h * 0.85, h * 0.47]);
-  const press = frame >= CLICK && frame < CLICK + 6 ? 0.9 : 1;
-  const bounce = interpolate(frame, [CLICK + 6, CLICK + 14, CLICK + 22], [0, -14, 0], clamp);
-  const open = interpolate(frame, [CLICK + 14, CLICK + 44], [0, 1], { ...clamp, easing: Easing.bezier(0.16, 1, 0.3, 1) });
-  const iconSize = w * 0.085;
-  return (
-    <AbsoluteFill
-      style={{
-        background: "radial-gradient(120% 120% at 30% 10%, #F7F7F5 0%, #DCE3EA 55%, #C9D3DD 100%)",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: w / 2 - iconSize / 2,
-          top: h * 0.43 - iconSize / 2 + bounce,
-          scale: press,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: w * 0.008,
-        }}
-      >
-        <AppIcon size={iconSize} />
-        <div style={{ fontFamily, fontSize: w * 0.014, fontWeight: 600, color: "#1D1D1F" }}>GeoWise</div>
-      </div>
-      {/* App window grows out of the icon */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          opacity: interpolate(open, [0, 0.25], [0, 1], clamp),
-          clipPath: `inset(${interpolate(open, [0, 1], [43, 0])}% ${interpolate(open, [0, 1], [46, 0])}% ${interpolate(open, [0, 1], [50, 0])}% ${interpolate(open, [0, 1], [46, 0])}% round ${interpolate(open, [0, 1], [24, 0])}px)`,
-        }}
-      >
-        <Img src={staticFile("stills/alloc.png")} style={{ width: w, height: h }} />
-      </div>
-      {open < 0.5 ? (
-        <svg width={w * 0.026} height={w * 0.026} viewBox="0 0 24 24" style={{ position: "absolute", left: cx, top: cy, scale: press }}>
-          <path d="M4 2 L4 20 L9 15.5 L12.5 22 L15.5 20.6 L12.2 14.3 L19 14 Z" fill="#111" stroke="#fff" strokeWidth={1.3} strokeLinejoin="round" />
-        </svg>
-      ) : null}
-    </AbsoluteFill>
-  );
-};
-
 export const LightIntroScene: React.FC = () => {
   const frame = useCurrentFrame();
 
-  // Drone: slow aerial push-in.
+  // Drone: slow aerial push-in (continues inside the QuickTime window).
   const droneScale = interpolate(frame, [DRONE[0], DRONE[1]], [1.0, 1.14]);
-  // Shoulder: hold, then push into the Mac screen and wash to white.
-  const push = interpolate(frame, [SHOULDER[1] - 70, SHOULDER[1]], [0, 1], {
-    ...clamp,
-    easing: Easing.bezier(0.7, 0, 0.84, 0),
-  });
-  const shoulderIn = interpolate(frame, [SHOULDER[0], SHOULDER[0] + 20], [0, 1], clamp);
-  const wash = interpolate(frame, [SHOULDER[1] - 25, SHOULDER[1]], [0, 1], clamp);
+  const footage = (
+    <AbsoluteFill style={{ scale: droneScale }}>
+      {PIT_SHOTS.map((shot) => (
+        <Sequence key={shot.key} from={shot.from} durationInFrames={shot.len} layout="none">
+          <PitShot shot={shot} />
+        </Sequence>
+      ))}
+    </AbsoluteFill>
+  );
 
-  // Reveal: MacBook settles in.
-  const macIn = interpolate(frame, [REVEAL, REVEAL + 50], [0, 1], { ...clamp, easing: Easing.bezier(...EASE_OUT) });
-  const macW = 1240;
-  const bezel = macW * 0.019;
-  const sw = macW - bezel * 2;
-  const sh = (sw * 982) / 1512;
+  // Desktop camera, and the reveal shot following it so the canvas lands on the Mac's screen.
+  const cam = desktopCamera(frame, CAM_MAC);
+  const m = (CANVAS.w * cam.s) / MAC_SCREEN.w;
+  const macDrift = interpolate(frame, [REVEAL, INTRO_FRAMES], [0.92, 0.95], clamp);
+  // The canvas matches the MacBook screen exactly at REVEAL (content, notch, corners): a hard cut.
+  const canvasO = 1;
+  const k = 1920 / WINDOW_VIDEO.w; // footage (1920 px) → window video size
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
-      {/* 1 · Drone over the open pit */}
-      <Sequence name="Drone · open pit" from={DRONE[0]} durationInFrames={DRONE[1] - DRONE[0] + 20}>
-        <AbsoluteFill style={{ scale: droneScale }}>
-          {PIT_SHOTS.map((shot) => (
-            <Sequence key={shot.key} from={shot.from} durationInFrames={shot.len} layout="none">
-              <PitShot shot={shot} />
-            </Sequence>
-          ))}
+      {/* 1 · Drone over the open pit (full frame until the zoom out) */}
+      {frame < DESK.start + 2 ? footage : null}
+
+      {/* 3 · MacBook with GeoWise open — under the canvas during the pull-back */}
+      {frame >= DESK.pullBack[0] - 10 ? (
+        <AbsoluteFill style={{ transformOrigin: "0 0", transform: frame < REVEAL ? `translate(${cam.tx - m * MAC_SCREEN.x}px, ${cam.ty - m * MAC_SCREEN.y}px) scale(${m})` : undefined }}>
+          <Backdrop />
+          <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
+            <div style={{ marginTop: 150, scale: macDrift }}>
+              <MacBook width={MAC_W}>
+                <HomeWithBoundary />
+              </MacBook>
+            </div>
+          </AbsoluteFill>
         </AbsoluteFill>
-        <AbsoluteFill style={{ background: "linear-gradient(0deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 55%)" }} />
+      ) : null}
+
+      {/* 2 · The footage was a QuickTime window: minimise, dock, launch GeoWise */}
+      {frame >= DESK.start && frame < REVEAL ? (
+        <AbsoluteFill style={{ opacity: canvasO }}>
+          <div style={{ position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${cam.tx}px, ${cam.ty}px) scale(${cam.s})` }}>
+            <MacDesktop
+              footage={
+                <div style={{ width: 1920, height: 1080, transformOrigin: "0 0", scale: 1 / k }}>
+                  {footage}
+                </div>
+              }
+            />
+          </div>
+        </AbsoluteFill>
+      ) : null}
+
+      {/* Caption shade + captions over the drone; they fade as the window shrinks */}
+      {frame < DESK.start + 16 ? (
+        <AbsoluteFill style={{ background: "linear-gradient(0deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 55%)", opacity: interpolate(frame, [DESK.start, DESK.start + 14], [1, 0], clamp) }} />
+      ) : null}
+      <Sequence name="Drone captions" durationInFrames={DESK.start + 20}>
         <FootageCaption lines={["Every mine eventually closes."]} delay={30} out={320} />
-        <FootageCaption
-          lines={["What comes next?", "Planning it means juggling scattered data."]}
-          delay={340}
-          out={DRONE[1]}
-        />
-   
-      </Sequence>
-
-      {/* 2 · Over the shoulder: engineer at the Mac */}
-      <Sequence name="Over the shoulder" from={SHOULDER[0]} durationInFrames={SHOULDER[1] - SHOULDER[0] + 10}>
-        <AbsoluteFill
-          style={{
-            opacity: shoulderIn,
-            transformOrigin: `${SHOULDER_SCREEN.x}px ${SHOULDER_SCREEN.y}px`,
-            scale: 1 + push * 3.2,
-            filter: `blur(${push * 6}px)`,
-          }}
-        >
-          <FootageSlot file="intro/shoulder.mp4" label="Over the shoulder · engineer at Mac" />
-        </AbsoluteFill>
-        <AbsoluteFill style={{ background: "linear-gradient(0deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 50%)", opacity: 1 - push }} />
-        <FootageCaption
-          lines={["Environmental engineers need", "a clear plan — not more layers."]}
-          delay={30}
-          out={SHOULDER[1] - SHOULDER[0] - 60}
-        />
-        <AbsoluteFill style={{ background: "#F3F2EF", opacity: wash }} />
-      </Sequence>
-
-      {/* 3 · Into the Mac → GeoWise opens */}
-      <Sequence name="Mac · app reveal" from={REVEAL}>
-        <Backdrop />
-        <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
-          <div style={{ position: "absolute", top: 70, width: "100%", textAlign: "center" }}>
-            <BlurIn delay={90} duration={36}>
-              <SilverText size={84}>Meet GeoWise.</SilverText>
-            </BlurIn>
-          </div>
-          <div
-            style={{
-              marginTop: interpolate(frame, [REVEAL + 80, REVEAL + 130], [0, 150], {
-                ...clamp,
-                easing: Easing.bezier(0.65, 0, 0.35, 1),
-              }),
-              opacity: macIn,
-              scale: interpolate(frame, [REVEAL, REVEAL + 60, REVEAL + 80, REVEAL + 130, INTRO_FRAMES], [1.25, 1, 1, 0.92, 0.95], {
-                ...clamp,
-                easing: Easing.bezier(0.16, 1, 0.3, 1),
-              }),
-            }}
-          >
-            <MacBook width={macW}>
-              <Desktop w={sw} h={sh} start={10} />
-            </MacBook>
-          </div>
-        </AbsoluteFill>
+        <FootageCaption lines={["What comes next?", "Planning it means juggling scattered data."]} delay={340} out={DESK.start + 14} />
       </Sequence>
     </AbsoluteFill>
   );

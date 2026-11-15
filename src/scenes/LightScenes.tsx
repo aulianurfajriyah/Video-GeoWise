@@ -477,14 +477,26 @@ const useCamera = () => {
     const fx = interpolate(frame, fs, CAM_KEYS.map((k) => k.x), { ...clamp, easing: smooth });
     const fy = interpolate(frame, fs, CAM_KEYS.map((k) => k.y), { ...clamp, easing: smooth });
     const focus = rec(fx, fy);
-    const k =
-      frame < ZOOM_OUT[0]
-        ? interpolate(frame, [...ZOOM_IN], [0, 1], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) })
-        : interpolate(frame, [...ZOOM_OUT], [1, 0], { ...clamp, easing: Easing.bezier(0.55, 0, 0.65, 0.8) });
-    const z = 1 + (CAM_ZOOM - 1) * k;
-    // screen = stage * z + t ; at k = 1 the focus sits on CAM_TARGET, at k = 0 it is the identity.
-    const tx = k * (CAM_TARGET.x - focus.x * z);
-    const ty = k * (CAM_TARGET.y - focus.y * z);
+    let z: number;
+    let tx: number;
+    let ty: number;
+    if (frame < ZOOM_OUT[0]) {
+      const k = interpolate(frame, [...ZOOM_IN], [0, 1], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
+      z = 1 + (CAM_ZOOM - 1) * k;
+      // screen = stage * z + t ; at k = 1 the focus sits on CAM_TARGET, at k = 0 it is the identity.
+      tx = k * (CAM_TARGET.x - focus.x * z);
+      ty = k * (CAM_TARGET.y - focus.y * z);
+    } else {
+      // Pull back to the wide shot as a straight zoom about the one point that stays put
+      // (no sideways arc); log-scale so the zoom speed feels even.
+      const e = interpolate(frame, [...ZOOM_OUT], [0, 1], { ...clamp, easing: Easing.bezier(0.55, 0, 0.65, 0.8) });
+      const t1 = { x: CAM_TARGET.x - focus.x * CAM_ZOOM, y: CAM_TARGET.y - focus.y * CAM_ZOOM };
+      const fx = -t1.x / (CAM_ZOOM - 1);
+      const fy = -t1.y / (CAM_ZOOM - 1);
+      z = Math.exp(lerp(Math.log(CAM_ZOOM), 0, e));
+      tx = fx - z * fx;
+      ty = fy - z * fy;
+    }
     return { z, tx, ty, toScreen: (p: { x: number; y: number }) => ({ x: p.x * z + tx, y: p.y * z + ty }) };
   };
 };
@@ -512,14 +524,16 @@ const PopOutBadge: React.FC<{
   w?: number;
 }> = ({ at, from, slot, children, w = COL.w }) => {
   const frame = useCurrentFrame();
-  const fly = interpolate(frame, [at, at + 30], [0, 1], { ...clamp, easing: Easing.bezier(0.2, 0.9, 0.25, 1) });
-  const grow = interpolate(frame, [at, at + 30], [0, 1], { ...clamp, easing: Easing.bezier(0.34, 1.45, 0.64, 1) });
+  // One smooth ease for both travel and growth, so the badge moves in a straight line and
+  // scales up evenly (no arc, no overshoot).
+  const fly = interpolate(frame, [at, at + 32], [0, 1], { ...clamp, easing: Easing.bezier(0.33, 0, 0.2, 1) });
+  const grow = fly;
   const o = interpolate(frame, [at, at + 8], [0, 1], clamp);
   const fill = interpolate(frame, [at + 12, at + 42], [0, 1], { ...clamp, easing: ease });
   if (frame < at) return null;
-  // Badge centre travels from the screen point to the slot centre, lifting off the glass (shadow + tilt).
+  // Badge centre travels straight from the screen point to the slot centre, lifting off the glass (shadow).
   const cx = lerp(from.x, slot.x + w / 2, fly);
-  const cy = lerp(from.y, slot.y + COL.h / 2, fly) - Math.sin(fly * Math.PI) * 60;
+  const cy = lerp(from.y, slot.y + COL.h / 2, fly);
   const lift = Math.sin(fly * Math.PI);
   return (
     <div
@@ -529,7 +543,7 @@ const PopOutBadge: React.FC<{
         top: cy - COL.h / 2,
         width: w,
         opacity: o,
-        transform: `perspective(1600px) rotateY(${(1 - fly) * -18}deg) scale(${0.15 + 0.85 * grow + lift * 0.06})`,
+        transform: `scale(${0.15 + 0.85 * grow})`,
         transformOrigin: "50% 50%",
         filter: `drop-shadow(0 ${18 + lift * 30}px ${30 + lift * 30}px rgba(0,0,0,${0.12 + lift * 0.12}))`,
       }}
@@ -1077,10 +1091,13 @@ export const LightVisionScene: React.FC = () => {
   const allocIn = interpolate(frame, [...TAB.toAlloc], [0, 1], clamp);
   const simIn = interpolate(frame, [...TAB.screenSwap], [0, 1], clamp);
   // The screen goes soft while the tab bar is up, so the bar reads clearly.
+  // Eased in and out; drawn as a blurred copy fading over the sharp screen, so the blur grows
+  // smoothly and the screen keeps its size (a growing blur radius needed a scale-up to hide its
+  // dark edges).
+  const BLUR_PX = 14;
   const screenBlur =
-    12 *
-    interpolate(frame, [TAB.popIn, TAB.popIn + 12], [0, 1], clamp) *
-    interpolate(frame, [TAB.dock[0], TAB.dock[0] + 20], [1, 0], clamp);
+    interpolate(frame, [TAB.popIn - 2, TAB.popIn + 16], [0, 1], { ...clamp, easing: io }) *
+    interpolate(frame, [TAB.dock[0], TAB.dock[0] + 24], [1, 0], { ...clamp, easing: io });
 
   // Start exactly on beat 2's laptop (position, size and its slight drift turn), then settle.
   const settle = interpolate(frame, [...TAB.settle], [0, 1], { ...clamp, easing: io });
@@ -1153,7 +1170,16 @@ export const LightVisionScene: React.FC = () => {
         >
           <div style={{ transform: `rotateY(${driftTurn}deg)` }}>
             <MacBook width={VISION_MAC.w}>
-              <div style={{ position: "absolute", inset: 0, filter: screenBlur > 0.05 ? `blur(${screenBlur}px)` : undefined, scale: 1 + screenBlur * 0.004 }}>
+              {/* While blurred: an enlarged, equally blurred copy underneath fills the soft edge of
+                  the blurred screen, so the blur has no dark rim and the screen keeps its size. */}
+              {screenBlur > 0.005 ? (
+                <div style={{ position: "absolute", inset: 0, scale: 1.08, filter: `blur(${BLUR_PX * screenBlur}px)` }}>
+                  <div style={{ position: "absolute", left: 0, top: 0, width: "100%", height: `${MENU * 100}%`, background: "#000" }} />
+                  <Img src={staticFile("stills/allocation_ui.png")} style={{ ...belowMenu }} />
+                  <Img src={staticFile("stills/simulation_ui.png")} style={{ ...belowMenu, opacity: simIn }} />
+                </div>
+              ) : null}
+              <div style={{ position: "absolute", inset: 0, filter: screenBlur > 0.005 ? `blur(${BLUR_PX * screenBlur}px)` : undefined }}>
                 {allocIn < 1 ? (
                   <Video
                     src={staticFile("recordings/takeF_layers.mp4")}
@@ -1229,30 +1255,44 @@ const GROW_RATE = (GROW_CLIP[1] - GROW_CLIP[0]) / GROW_FRAMES;
 const SKY_PAN = [345, 405] as const;
 export const THREED_FRAMES = 420;
 const SKY = "#AAD0EC"; // the clip's sky at its top edge
-/** The simulation is framed 1.3× (anchored at the ground) so the grown trees fill the frame;
- * fixed, no zoom animation. Beat 5's clip lands on exactly this framing. */
+/** The simulation opens framed 1.3× (anchored at the centre of the ground line) so the grown
+ * trees fill the frame — beat 5's clip lands on exactly this framing — then creeps in slowly
+ * (to SIM_SCALE_END) from the same anchor while the forest grows. */
 export const SIM_SCALE = 1.3;
-export const SIM_ORIGIN = "40% 100%";
+const SIM_SCALE_END = 1.65;
+export const SIM_ORIGIN = "50% 100%";
 /** End-card background tone; the sky above the simulation fades into it. */
 const END_TONE = "#F3F2EF";
+/** How far the tilt to the sky moves the shot: the footage is 1080 × SIM_SCALE_END tall once
+ * pushed in (bottom-anchored), so it must travel that far plus a margin for the treetops to
+ * leave the frame entirely before the end card. */
+const SKY_PAN_DIST = 1080 * 1.65 + 300;
 const SKY_HIGH = "#DCEBF6";
 /** Last scene frame the clip still has footage for; it holds there afterwards. */
 const GROW_LAST = Math.floor((180 - GROW_CLIP[0] - 1) / GROW_RATE);
 /** The simulation holds its first frame while beat 5's clip dissolves into it (same view, both
  * still), then the growth starts. */
 const GROW_HOLD = 14;
+/** Scene frame where the Year counter reaches 30 (1:41 in the light cut). */
+const YEAR_30_AT = 339;
 const growthFill: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%" };
 
 export const LightThreeDScene: React.FC = () => {
   const frame = useCurrentFrame();
   const theme = useTheme();
-  const year = interpolate(frame, [GROW_HOLD, GROW_HOLD + GROW_FRAMES], [0, 30], clamp);
+  // The counter reaches Year 30 at scene frame 339 (1:41 in the light cut; it was 1:51 before
+  // the intro was shortened). It runs past the growth clip, which finishes earlier.
+  const year = interpolate(frame, [GROW_HOLD, YEAR_30_AT], [0, 30], clamp);
   // Once grown, the camera tilts up past the treetops (they fade into the sky and leave the
   // frame), so the end card dissolves in from clear sky.
   const pan = interpolate(frame, [...SKY_PAN], [0, 1], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
   // Every overlay leaves before the tilt to the sky: each part slides off towards its side and
   // fades, a few frames after the one before (follow-through).
   const exitAt = SKY_PAN[0] - 30;
+  // Slow push in from the centre-bottom anchor: starts once the dissolve hold is over and
+  // finishes as the tilt to the sky begins (a push still running during the tilt moved the
+  // apparent anchor off the bottom edge). Eases out only, so it is already moving from the start.
+  const simScale = interpolate(frame, [GROW_HOLD, SKY_PAN[0]], [SIM_SCALE, SIM_SCALE_END], { ...clamp, easing: Easing.bezier(0.3, 0.25, 0.45, 1) });
 
   return (
     <AbsoluteFill style={{ fontFamily }}>
@@ -1260,7 +1300,7 @@ export const LightThreeDScene: React.FC = () => {
       <AbsoluteFill>
         {/* The growth simulation full-screen (no laptop), continuing from the ground shot */}
         {/* Fixed framing: it opens on exactly the view the ground-to-plant clip lands on */}
-        <AbsoluteFill style={{ scale: SIM_SCALE, transformOrigin: SIM_ORIGIN, translate: `0px ${pan * 1600}px` }}>
+        <AbsoluteFill style={{ scale: simScale, transformOrigin: SIM_ORIGIN, translate: `0px ${pan * SKY_PAN_DIST}px` }}>
           {/* One video element the whole time (swapping elements made the preview blink) */}
           <Freeze frame={GROW_HOLD} active={frame < GROW_HOLD}>
             <Sequence from={GROW_HOLD} layout="none">
@@ -1308,7 +1348,7 @@ export const LightThreeDScene: React.FC = () => {
             <GlassBadge>
               <div style={{ fontSize: 20, color: theme.muted, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>Growth horizon</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 6 }}>
-                <span style={{ fontSize: 34, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>Year {Math.round(year)}</span>
+                <span style={{ fontSize: 34, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>Year {Math.floor(year)}</span>
                 <span style={{ fontSize: 24, fontWeight: 600, color: theme.muted }}>→ 30</span>
               </div>
               <div style={{ marginTop: 14, height: 6, borderRadius: 3, background: "rgba(0,0,0,0.08)" }}>

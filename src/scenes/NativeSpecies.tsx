@@ -1,5 +1,5 @@
 import React from "react";
-import { Easing, interpolate, useCurrentFrame } from "remotion";
+import { Easing, Img, interpolate, staticFile, useCurrentFrame } from "remotion";
 import { BlurIn } from "../components";
 import { colors, EASE_OUT, fontFamily } from "../theme";
 import { AGRI_SPOTS, FOREST_SPOTS, ZONE_MAP, ZONE_POLYGONS } from "../zoneMap";
@@ -97,16 +97,16 @@ const Gamal = () => (
   </>
 );
 
-type Species = { name: string; zone: Zone; Art: React.FC };
+type Species = { name: string; zone: Zone; Art: React.FC; photo: string };
 const SPECIES: Species[] = [
-  { name: "Sengon", zone: "forestry", Art: Sengon },
-  { name: "Jati", zone: "forestry", Art: Jati },
-  { name: "Cemara Laut", zone: "forestry", Art: CemaraLaut },
-  { name: "Jabon", zone: "forestry", Art: Jabon },
-  { name: "Pinus", zone: "forestry", Art: Pinus },
-  { name: "Kakao", zone: "agriculture", Art: Kakao },
-  { name: "Karet", zone: "agriculture", Art: Karet },
-  { name: "Gamal", zone: "agriculture", Art: Gamal },
+  { name: "Sengon", zone: "forestry", Art: Sengon , photo: "species/sengon.jpg" },
+  { name: "Jati", zone: "forestry", Art: Jati , photo: "species/jati.jpg" },
+  { name: "Cemara Laut", zone: "forestry", Art: CemaraLaut , photo: "species/cemara.jpg" },
+  { name: "Jabon", zone: "forestry", Art: Jabon , photo: "species/jabon.jpg" },
+  { name: "Pinus", zone: "forestry", Art: Pinus , photo: "species/pinus.jpg" },
+  { name: "Kakao", zone: "agriculture", Art: Kakao , photo: "species/kakao.jpg" },
+  { name: "Karet", zone: "agriculture", Art: Karet , photo: "species/karet.jpg" },
+  { name: "Gamal", zone: "agriculture", Art: Gamal , photo: "species/gamal.jpg" },
 ];
 
 /* ---- Layout (1920 × 1080) ---- */
@@ -187,9 +187,11 @@ const SpeciesTile: React.FC<{ s: Species; i: number }> = ({ s, i }) => {
           overflow: "hidden",
         }}
       >
-        <svg width={TILE} height={TILE} viewBox="-8 -8 116 116">
+        {/* Real photo while it is presented; it turns into the species icon on its way to the map */}
+        <svg width={TILE} height={TILE} viewBox="-8 -8 116 116" style={{ position: "absolute", inset: 0 }}>
           <s.Art />
         </svg>
+        <Img src={staticFile(s.photo)} style={{ position: "absolute", inset: 0, width: TILE, height: TILE, objectFit: "cover", opacity: interpolate(fly, [0.15, 0.55], [1, 0], clamp) }} />
       </div>
       <div
         style={{
