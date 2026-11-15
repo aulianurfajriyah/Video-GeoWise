@@ -1,19 +1,21 @@
 import React from "react";
-import { AbsoluteFill, Easing, Img, interpolate, random, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, Easing, Freeze, Img, interpolate, random, Sequence, staticFile, useCurrentFrame } from "remotion";
+import { Video } from "@remotion/media";
 import { LAYERS, S, type Layer } from "./LayersScene";
 import { CARD_PT, InputCard, START_BTN_PT } from "./InputCard";
 import { Backdrop, BlurIn, GlassBadge, PopIn, SilverText, WipeIn } from "../components";
 import { MacBook } from "../MacBook";
-import { colors, EASE_OUT, fontFamily, useTheme } from "../theme";
+import { ContourLines } from "../ContourLines";
+import { colors, EASE_OUT, fontFamily, REC, useTheme } from "../theme";
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 const ease = Easing.bezier(...EASE_OUT);
 
-const Eyebrow: React.FC<{ children: React.ReactNode; delay?: number }> = ({ children, delay = 0 }) => {
+const Eyebrow: React.FC<{ children: React.ReactNode; delay?: number; color?: string }> = ({ children, delay = 0, color }) => {
   const theme = useTheme();
   return (
     <BlurIn delay={delay} duration={24}>
-      <div style={{ color: theme.eyebrow, fontSize: 24, fontWeight: 700, letterSpacing: "0.22em", textTransform: "uppercase" }}>
+      <div style={{ color: color ?? theme.eyebrow, fontSize: 24, fontWeight: 700, letterSpacing: "0.22em", textTransform: "uppercase" }}>
         {children}
       </div>
     </BlurIn>
@@ -877,116 +879,503 @@ export const LightMacFlip: React.FC = () => {
 };
 
 /* ---------- Beat 5 ---------- */
+// The Land-Use Allocation view shows clearly for a moment, then a liquid-glass copy of
+// the app's view switcher pops up over the (blurred) screen, the cursor taps "Simulation",
+// the screen switches to the simulation view, the camera zooms into the pit until it
+// matches the first frame of the satellite-to-ground clip, and the clip takes over.
+export const VISION_FRAMES = 256;
+const VISION_MAC = { left: 460, top: 270, w: 1000 };
+const VISION_SCREEN = (() => {
+  const bezel = VISION_MAC.w * 0.019;
+  const sw = VISION_MAC.w - bezel * 2;
+  const sh = (sw * 982) / 1512;
+  return { x: VISION_MAC.left + bezel, y: VISION_MAC.top + bezel, w: sw, h: sh };
+})();
+/** Frames (beat 5) of each step. */
+const TAB = {
+  // Beat 2's laptop (same recording, same frame) holds still through the short
+  // crossfade, then glides to the centre while its screen dissolves into Land-Use Allocation.
+  settle: [9, 30],
+  toAlloc: [12, 26],
+  popIn: 50, // popup appears (1:26.20), after the map has been readable for ~1 s
+  cursorIn: [57, 82],
+  click: 84,
+  slide: [86, 106],
+  screenSwap: [100, 112],
+  dock: [114, 138], // popup shrinks into the screen's own tab bar
+  toCrop: [132, 168], // zoom into the pit until the frame matches the clip's first frame
+  clip: 168, // hard cut to the satellite-to-ground clip (5 s; ground holds still from ~3 s)
+} as const;
+const TAB_LABELS = ["Land-Use Allocation", "Comparison", "Simulation"];
+const POPUP = { w: 1080, h: 116, pad: 8, cx: 960, cy: 560 };
+/** Screenshots sit below a black menu bar, like the screen recordings in the other scenes. */
+const MENU = REC.menuBar / REC.height;
+const belowMenu: React.CSSProperties = {
+  position: "absolute",
+  left: 0,
+  top: `${MENU * 100}%`,
+  width: "100%",
+  height: `${(1 - MENU) * 100}%`,
+  objectFit: "fill",
+};
+/** The tab bar inside the Simulation screenshot (fractions of the screen). */
+const SCREEN_TABS = { cx: 0.499, cy: MENU + (1 - MENU) * (35 / 1255), w: 0.2925 };
+/** The clip's first frame is this crop of the Simulation screenshot (screenshot px, 2000×1255). */
+const CLIP_CROP = { x: 473, y: 480, w: 994, h: 560 };
+const SATELLITE_CLIP = "seedance/satellite_to_ground.mp4";
+/** The clip creeps for its first ~0.6 s, which read as a pause after our zoom, so it is
+ * entered at clip frame 15 (24 fps) — already 1.30× in and moving ≈ 3 %/frame (measured). */
+const CLIP_TRIM = 19; // 30 fps frames ≈ clip frame 15
+const CLIP_TRIM_SCALE = 1.3;
+/** The clip plays 1.5× faster (its slow mid-section dragged); its zoom speed scales with it. */
+const CLIP_RATE = 1.5;
+const CLIP_ZOOM_RATE = 0.03 * CLIP_RATE;
+const CLIP_DISSOLVE = 4;
+/** The clip plays full-screen until clip frame 88 (GROUND_STILL_AT, its cleanest ground
+ * frame), where it hands over to that exact frame as a still, and only then does the ground
+ * tip back toward the horizon and glide toward the viewer (camera pitching up while flying
+ * forward), into the simulation's low view. Tilting only the still keeps the whole plane one
+ * rigid surface (a playing, zooming video inside a still surround read as a window). Its zoom-blurred
+ * border feathers into ground that extends it everywhere: a seamless soil texture (clip frame
+ * 112, rescaled 0.9× to frame 88's scale, shading evened out, rocks removed so nothing repeats
+ * visibly), pre-baked as one image. */
+const GROUND_FRAME = "seedance/ground_frame.jpg";
+const GROUND_STILL_AT = 214; // scene frame showing clip frame 88
+/** Frame 88 with its blotchy shading evened out like the texture, so it doesn't read as a
+ * darker patch; it dissolves in over the still during the tilt. */
+const GROUND_FRAME_FLAT = "seedance/ground_frame_flat.jpg";
+const GROUND_MOSAIC = "seedance/ground_mosaic.jpg";
+const SHARP = { x: 240, y: 135, w: 1440, h: 810 };
+const TILT_FROM = GROUND_STILL_AT;
+const TILT_DEG = 40;
+/** The clip's own zoom stalls once the ground fills the frame (clip frame ~70), which read as
+ * a pause before the tilt; a camera push-in starts right there on the full-screen clip and
+ * carries straight on through the tilt. */
+const PUSH_FROM = 194;
+const PUSH_Z = 480;
+const GLIDE = 650; // px the ground travels toward the viewer (plane coordinates)
+
+const GroundPlane: React.FC<{ tilt: number; push: number; glide: number; feather: number; showMosaic: boolean; children: React.ReactNode }> = ({
+  tilt,
+  push,
+  glide,
+  feather,
+  showMosaic,
+  children,
+}) => {
+  const f = 18 * feather;
+  const edge = (dir: string) => `linear-gradient(${dir}, transparent 0%, black ${f}%, black ${100 - f}%, transparent 100%)`;
+  const mask = feather > 0 ? `${edge("90deg")}, ${edge("180deg")}` : undefined;
+  return (
+    <AbsoluteFill style={{ perspective: 1400, perspectiveOrigin: "50% 50%", overflow: "hidden" }}>
+      <AbsoluteFill
+        style={{
+          transformOrigin: "50% 100%",
+          transform: `translateZ(${push}px) rotateX(${TILT_DEG * tilt}deg) translateY(${glide}px)`,
+          willChange: "transform",
+        }}
+      >
+        {/* Mounted from the clip's start (hidden) so the image is loaded before it shows */}
+        <Img
+          src={staticFile(GROUND_MOSAIC)}
+          style={{
+            position: "absolute",
+            left: SHARP.x - 2 * SHARP.w,
+            top: SHARP.y - 5 * SHARP.h,
+            width: 5 * SHARP.w,
+            height: 7 * SHARP.h,
+            opacity: showMosaic ? 1 : 0,
+          }}
+        />
+        <AbsoluteFill style={{ maskImage: mask, WebkitMaskImage: mask, maskComposite: "intersect", WebkitMaskComposite: "source-in" }}>
+          {children}
+        </AbsoluteFill>
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+};
+
+/** Beat 2 (254 frames) overlaps beat 5 by an 8-frame fade, so beat 5's frame 0 is beat 2's frame 246. */
+const INTEGRATED_FRAMES = 254;
+const INTO_VISION_FADE = 8;
+const INTEGRATED_AT_START = INTEGRATED_FRAMES - INTO_VISION_FADE;
+
+/** Liquid-glass segmented control. The selection is a lens spanning tab `trail` → tab `lead`
+ * (fractional indices): the leading edge runs ahead, the trailing edge catches up, and the
+ * lens lifts (`lift` 0 → 1) off the bar while it moves, like iOS 26 liquid glass. */
+const GlassTabs: React.FC<{ lead: number; trail: number; lift: number; pressed: boolean }> = ({ lead, trail, lift, pressed }) => {
+  const segW = (POPUP.w - POPUP.pad * 2) / TAB_LABELS.length;
+  const pillL = POPUP.pad + Math.min(lead, trail) * segW;
+  const pillR = POPUP.pad + (Math.max(lead, trail) + 1) * segW;
+  const pillH = POPUP.h - POPUP.pad * 2;
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: POPUP.w,
+        height: POPUP.h,
+        borderRadius: POPUP.h / 2,
+        background: "linear-gradient(180deg, rgba(252,252,250,0.9) 0%, rgba(246,246,243,0.82) 100%)",
+        backdropFilter: "blur(28px) saturate(180%)",
+        WebkitBackdropFilter: "blur(28px) saturate(180%)",
+        boxShadow:
+          "0 0 0 1.5px rgba(255,255,255,0.9), 0 0 0 2.5px rgba(0,0,0,0.05), inset 0 2px 1px rgba(255,255,255,1), inset 0 -2px 3px rgba(0,0,0,0.05), 0 34px 70px -24px rgba(0,0,0,0.32), 0 10px 22px -10px rgba(0,0,0,0.16)",
+        fontFamily,
+      }}
+    >
+      {/* Dividers between unselected tabs; they fade as the lens reaches them */}
+      {[1, 2].map((i) => {
+        const x = POPUP.pad + i * segW;
+        const gap = Math.max(pillL - x, x - pillR, 0);
+        return (
+          <div
+            key={i}
+            style={{
+              position: "absolute",
+              left: x,
+              top: POPUP.h * 0.3,
+              width: 1.5,
+              height: POPUP.h * 0.4,
+              background: "rgba(0,0,0,0.12)",
+              opacity: Math.min(gap / 24, 1),
+            }}
+          />
+        );
+      })}
+      {/* The selection lens: solid grey at rest, a lifted clear-glass droplet while moving */}
+      <div
+        style={{
+          position: "absolute",
+          left: pillL,
+          top: POPUP.pad,
+          width: pillR - pillL,
+          height: pillH,
+          borderRadius: pillH / 2,
+          scale: `${1 + 0.04 * lift} ${1 + 0.14 * lift}`,
+          background: `linear-gradient(180deg, rgba(${lerp(226, 240, lift)},${lerp(226, 240, lift)},${lerp(223, 238, lift)},1) 0%, rgba(${lerp(222, 226, lift)},${lerp(222, 228, lift)},${lerp(219, 228, lift)},1) 100%)`,
+          boxShadow: `0 0 0 ${1.5 * lift}px rgba(255,255,255,${0.9 * lift}), inset 0 1px 0 rgba(255,255,255,${0.6 + 0.4 * lift}), inset 0 -2px 4px rgba(0,0,0,${0.03 + 0.05 * lift}), 0 ${10 * lift}px ${26 * lift}px rgba(0,0,0,${0.16 * lift})`,
+        }}
+      />
+      {TAB_LABELS.map((label, i) => (
+        <div
+          key={label}
+          style={{
+            position: "absolute",
+            left: POPUP.pad + i * segW,
+            top: 0,
+            width: segW,
+            height: POPUP.h,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 32,
+            fontWeight: 500,
+            whiteSpace: "nowrap",
+            letterSpacing: "-0.01em",
+            color: "#3A3A3C",
+            scale: pressed && i === 2 ? 0.96 : 1,
+          }}
+        >
+          {label}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const Cursor: React.FC<{ x: number; y: number; scale: number; opacity: number }> = ({ x, y, scale, opacity }) => (
+  <svg width={46} height={46} viewBox="0 0 24 24" style={{ position: "absolute", left: x, top: y, scale, opacity, transformOrigin: "0 0" }}>
+    <path d="M4 2 L4 20 L9 15.5 L12.5 22 L15.5 20.6 L12.2 14.3 L19 14 Z" fill="#111" stroke="#fff" strokeWidth={1.3} strokeLinejoin="round" />
+  </svg>
+);
+
 export const LightVisionScene: React.FC = () => {
   const frame = useCurrentFrame();
-  // Camera orbits up and over the laptop: the map on screen tips back toward 3D.
-  const tilt = interpolate(frame, [10, 160], [0, 1], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
+  const io = Easing.bezier(0.65, 0, 0.35, 1);
+
+  // Popup: spring in, then dock into the screenshot's own tab bar.
+  const popIn = interpolate(frame, [TAB.popIn, TAB.popIn + 18], [0, 1], { ...clamp, easing: Easing.bezier(0.34, 1.56, 0.64, 1) });
+  const popFade = interpolate(frame, [TAB.popIn, TAB.popIn + 8], [0, 1], clamp);
+  const dock = interpolate(frame, [...TAB.dock], [0, 1], { ...clamp, easing: io });
+  const dockX = VISION_SCREEN.x + VISION_SCREEN.w * SCREEN_TABS.cx;
+  const dockY = VISION_SCREEN.y + VISION_SCREEN.h * SCREEN_TABS.cy;
+  const dockScale = (VISION_SCREEN.w * SCREEN_TABS.w) / POPUP.w;
+
+  // Selection 0 → 2: the leading edge reaches "Simulation" first, the trailing edge follows,
+  // and the lens lifts off the bar for the trip, settling back as it lands.
+  const [s0, s1] = TAB.slide;
+  const lead = 2 * interpolate(frame, [s0, s1 - 4], [0, 1], { ...clamp, easing: Easing.bezier(0.5, 0, 0.2, 1) });
+  const trail = 2 * interpolate(frame, [s0 + 3, s1], [0, 1], { ...clamp, easing: Easing.bezier(0.55, 0, 0.25, 1) });
+  const lift = interpolate(frame, [s0 - 2, s0 + 5, s1 - 5, s1 + 2], [0, 1, 1, 0], { ...clamp, easing: io });
+  const pressed = frame >= TAB.click && frame < TAB.click + 6;
+
+  // Cursor: in from the lower right to the "Simulation" tab, click, then leave with the popup.
+  const segW = (POPUP.w - POPUP.pad * 2) / 3;
+  const target = { x: POPUP.cx - POPUP.w / 2 + POPUP.pad + 2.5 * segW, y: POPUP.cy + 4 };
+  const cIn = interpolate(frame, [...TAB.cursorIn], [0, 1], { ...clamp, easing: Easing.bezier(0.33, 1, 0.68, 1) });
+  const cursorOpacity = interpolate(frame, [TAB.cursorIn[0], TAB.cursorIn[0] + 6, TAB.dock[0], TAB.dock[0] + 10], [0, 1, 1, 0], clamp);
+
+  // Screen content: beat 2's recording → Land-Use Allocation → Simulation.
+  const allocIn = interpolate(frame, [...TAB.toAlloc], [0, 1], clamp);
+  const simIn = interpolate(frame, [...TAB.screenSwap], [0, 1], clamp);
+  // The screen goes soft while the tab bar is up, so the bar reads clearly.
+  const screenBlur =
+    12 *
+    interpolate(frame, [TAB.popIn, TAB.popIn + 12], [0, 1], clamp) *
+    interpolate(frame, [TAB.dock[0], TAB.dock[0] + 20], [1, 0], clamp);
+
+  // Start exactly on beat 2's laptop (position, size and its slight drift turn), then settle.
+  const settle = interpolate(frame, [...TAB.settle], [0, 1], { ...clamp, easing: io });
+  const fromScale = INTEGRATED_MAC.w / VISION_MAC.w;
+  const macTranslate = `${(INTEGRATED_MAC.left - VISION_MAC.left) * (1 - settle)}px ${(INTEGRATED_MAC.top - VISION_MAC.top) * (1 - settle)}px`;
+  const macScale = lerp(fromScale, 1, settle);
+  const driftTurn = ((2 * (INTEGRATED_AT_START + frame)) / 700) * (1 - settle);
+
+  // Zoom (no rotation) into the pit until the frame shows exactly CLIP_CROP, then cut to the clip.
+  const k = VISION_SCREEN.w / 2000; // screenshot px → frame px
+  const crop = {
+    x: VISION_SCREEN.x + (CLIP_CROP.x + CLIP_CROP.w / 2) * k,
+    y: VISION_SCREEN.y + VISION_SCREEN.h * MENU + (CLIP_CROP.y + CLIP_CROP.h / 2) * k,
+  };
+  const toCrop = interpolate(frame, [...TAB.toCrop], [0, 1], { ...clamp, easing: io });
+  // Log-space zoom that never stops: it reaches the crop exactly at the cut while still
+  // moving at the clip's opening speed, then keeps going under a short dissolve into the clip
+  // (no hold, and the dissolve hides the small sharpness/colour difference).
+  const cropLog = Math.log(1920 / (CLIP_CROP.w * k)) + Math.log(CLIP_TRIM_SCALE);
+  const zoomT = (frame - TAB.toCrop[0]) / (TAB.toCrop[1] - TAB.toCrop[0]);
+  const exitLog = CLIP_ZOOM_RATE * (TAB.toCrop[1] - TAB.toCrop[0]); // log-speed at the cut, over the span
+  const camLog =
+    zoomT <= 0
+      ? 0
+      : zoomT <= 1
+        ? (-2 * zoomT ** 3 + 3 * zoomT ** 2) * cropLog + (zoomT ** 3 - zoomT ** 2) * exitLog
+        : cropLog + CLIP_ZOOM_RATE * (frame - TAB.toCrop[1]);
+  const camScale = Math.exp(camLog);
+  const clipIn = interpolate(frame, [TAB.clip, TAB.clip + CLIP_DISSOLVE], [0, 1], clamp);
+
   return (
     <AbsoluteFill style={{ fontFamily }}>
       <Backdrop />
-      <div style={{ position: "absolute", top: 110, width: "100%", textAlign: "center", zIndex: 2 }}>
-        <BlurIn delay={4}>
+      <div
+        style={{
+          position: "absolute",
+          top: 110,
+          width: "100%",
+          textAlign: "center",
+          zIndex: 2,
+          opacity: interpolate(frame, [TAB.dock[0] + 4, TAB.toCrop[0]], [1, 0], clamp),
+        }}
+      >
+        <BlurIn delay={10}>
           <SilverText size={88}>But the vision doesn’t stop at a map.</SilverText>
         </BlurIn>
       </div>
-      <div style={{ position: "absolute", left: 960 - 500, top: 270, perspective: 1800 }}>
+      {/* Camera: zooms into the pit on the screen */}
+      <AbsoluteFill
+        style={{
+          transformOrigin: `${crop.x}px ${crop.y}px`,
+          translate: `${(960 - crop.x) * toCrop}px ${(540 - crop.y) * toCrop}px`,
+          scale: camScale,
+          // Stays fully opaque under the clip's fade-in (fading both at once let the light
+          // background show through: a flash), then hides once the clip is fully in.
+          opacity: clipIn < 1 ? 1 : 0,
+        }}
+      >
         <div
           style={{
-            transformOrigin: "50% 100%",
-            transform: `rotateX(${tilt * 38}deg) rotateZ(${tilt * -10}deg) translateY(${tilt * -30}px) scale(${1 - tilt * 0.12})`,
+            position: "absolute",
+            left: VISION_MAC.left,
+            top: VISION_MAC.top,
+            translate: macTranslate,
+            scale: macScale,
+            transformOrigin: "0 0",
+            perspective: 2400,
           }}
         >
-          <MacBook width={1000} image="stills/alloc.png" />
+          <div style={{ transform: `rotateY(${driftTurn}deg)` }}>
+            <MacBook width={VISION_MAC.w}>
+              <div style={{ position: "absolute", inset: 0, filter: screenBlur > 0.05 ? `blur(${screenBlur}px)` : undefined, scale: 1 + screenBlur * 0.004 }}>
+                {allocIn < 1 ? (
+                  <Video
+                    src={staticFile("recordings/takeF_layers.mp4")}
+                    trimBefore={30 + INTEGRATED_AT_START}
+                    muted
+                    objectFit="fill"
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+                  />
+                ) : null}
+                <div style={{ position: "absolute", left: 0, top: 0, width: "100%", height: `${MENU * 100}%`, background: "#000", opacity: allocIn }} />
+                <Img src={staticFile("stills/allocation_ui.png")} style={{ ...belowMenu, opacity: allocIn }} />
+                <Img src={staticFile("stills/simulation_ui.png")} style={{ ...belowMenu, opacity: simIn }} />
+              </div>
+            </MacBook>
+          </div>
         </div>
-      </div>
+        {frame >= TAB.popIn && dock < 1 ? (
+          <div
+            style={{
+              position: "absolute",
+              left: lerp(POPUP.cx, dockX, dock) - POPUP.w / 2,
+              top: lerp(POPUP.cy, dockY, dock) - POPUP.h / 2,
+              opacity: popFade * interpolate(dock, [0.75, 1], [1, 0], clamp),
+              scale: lerp(0.7 + 0.3 * popIn, dockScale, dock),
+              filter: `blur(${(1 - popFade) * 16}px)`,
+            }}
+          >
+            <GlassTabs lead={lead} trail={trail} lift={lift} pressed={pressed} />
+          </div>
+        ) : null}
+      </AbsoluteFill>
+      {/* Satellite → ~15 m above the ground (generated clip); starts on the zoomed frame above,
+          then tips back and glides forward as soon as the ground fills the frame */}
+      {frame >= TAB.clip - 60 ? (
+        <AbsoluteFill style={{ opacity: clipIn }}>
+          <GroundPlane
+            push={PUSH_Z * interpolate(frame, [PUSH_FROM, VISION_FRAMES], [0, 1], { ...clamp, easing: Easing.bezier(0.05, 0.55, 0.45, 1) })}
+            tilt={interpolate(frame, [TILT_FROM, VISION_FRAMES], [0, 1], { ...clamp, easing: Easing.bezier(0.2, 0.12, 0.45, 1) })}
+            glide={GLIDE * interpolate(frame, [TILT_FROM, VISION_FRAMES], [0, 1], { ...clamp, easing: Easing.bezier(0.25, 0.2, 0.7, 0.85) })}
+            feather={interpolate(frame, [TILT_FROM, TILT_FROM + 10], [0, 1], clamp)}
+            showMosaic={frame >= TILT_FROM}
+          >
+            <Sequence from={TAB.clip} durationInFrames={GROUND_STILL_AT + 1 - TAB.clip} premountFor={60}>
+              <Video src={staticFile(SATELLITE_CLIP)} trimBefore={CLIP_TRIM} playbackRate={CLIP_RATE} muted objectFit="cover" style={{ width: "100%", height: "100%" }} />
+            </Sequence>
+            <Img src={staticFile(GROUND_FRAME)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: frame >= GROUND_STILL_AT ? 1 : 0 }} />
+            <Img
+              src={staticFile(GROUND_FRAME_FLAT)}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: interpolate(frame, [GROUND_STILL_AT, GROUND_STILL_AT + 8], [0, 1], clamp) }}
+            />
+          </GroundPlane>
+        </AbsoluteFill>
+      ) : null}
+      {cursorOpacity > 0 ? (
+        <Cursor
+          x={lerp(1500, target.x, cIn)}
+          y={lerp(980, target.y, cIn)}
+          scale={pressed ? 0.88 : 1}
+          opacity={cursorOpacity}
+        />
+      ) : null}
     </AbsoluteFill>
   );
 };
 
 /* ---------- Beat 6 ---------- */
-const SPECIES = [
-  { local: "Sengon", latin: "Falcataria moluccana", share: 60, trees: "1,093" },
-  { local: "Jati", latin: "Tectona grandis", share: 40, trees: "744" },
-];
+
+/** Beat 6 part A: the growth simulation plays straight away, slowed so its growth
+ * (clip frames 3 → 66) spans exactly 5 s while the badge counts Year 0 → 30. */
+const GROWTH_SRC = "recordings/simulation_growth.mp4";
+/** Clip frames (30 fps) where growth starts and finishes. */
+const GROW_CLIP = [3, 66] as const;
+const GROW_FRAMES = 150; // 5 s
+const GROW_RATE = (GROW_CLIP[1] - GROW_CLIP[0]) / GROW_FRAMES;
+/** Tilt up to the sky after the forest has grown; the scene ends shortly after. */
+const SKY_PAN = [GROW_FRAMES + 20, GROW_FRAMES + 80] as const;
+export const THREED_FRAMES = GROW_FRAMES + 95;
+const SKY = "#AAD0EC"; // the clip's sky at its top edge
+const SKY_HIGH = "#DCEBF6";
+/** Last scene frame the clip still has footage for; it holds there afterwards. */
+const GROW_LAST = Math.floor((180 - GROW_CLIP[0] - 1) / GROW_RATE);
+const growthFill: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%" };
 
 export const LightThreeDScene: React.FC = () => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
   const theme = useTheme();
-  const SPLIT = 420;
-  const aOut = interpolate(frame, [SPLIT, SPLIT + 30], [1, 0], clamp);
-  const bIn = interpolate(frame, [SPLIT + 6, SPLIT + 46], [0, 1], { ...clamp, easing: ease });
-  // Slow push toward the laptop over part A (whole screen stays in frame).
-  const pushA = interpolate(frame, [0, SPLIT], [1, 1.06]);
+  const year = interpolate(frame, [0, GROW_FRAMES], [0, 30], clamp);
+  // Framed tighter (anchored at the ground) so the tall trees fill the frame and stay in
+  // shot as the camera tilts up; a slow push in while the forest grows.
+  const pushA = interpolate(frame, [0, THREED_FRAMES], [1.3, 1.36]);
+  // Once grown, the camera tilts up past the treetops (they fade into the sky and leave the
+  // frame), so the end card dissolves in from clear sky.
+  const pan = interpolate(frame, [...SKY_PAN], [0, 1], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
+  const copyOut = interpolate(frame, [SKY_PAN[0] - 10, SKY_PAN[0] + 20], [1, 0], clamp);
+  // Carries the ground shot's pitch-up through the crossfade: the view is still settling
+  // downward as it fades in, so the camera move reads as one continuous motion.
+  const settleIn = interpolate(frame, [0, 36], [1, 0], { ...clamp, easing: Easing.bezier(0.2, 0.6, 0.35, 1) });
 
   return (
     <AbsoluteFill style={{ fontFamily }}>
       <Backdrop />
-      <AbsoluteFill style={{ opacity: aOut }}>
-        <div style={{ position: "absolute", left: 110, top: 200, width: 1120, height: 760, scale: pushA, transformOrigin: "50% 50%" }}>
-          <MacStage left={0} top={0} turn={-16}>
-            <MacBook width={1120} src="recordings/takeD_growth.mp4" trimBefore={1 * fps} />
-          </MacStage>
-        </div>
-        <div style={{ position: "absolute", left: 1340, top: 260, width: 520, display: "flex", flexDirection: "column", gap: 24 }}>
-          <Eyebrow delay={16}>3D reclamation plan</Eyebrow>
-          <BlurIn delay={28}>
-            <SilverText size={64}>Explore it in 3D.</SilverText>
+      <AbsoluteFill>
+        {/* The growth simulation full-screen (no laptop), continuing from the ground shot */}
+        <AbsoluteFill style={{ scale: pushA * (1 + 0.12 * settleIn), transformOrigin: "40% 100%", translate: `0px ${pan * 1600}px` }}>
+          {/* One video element the whole time (swapping elements made the preview blink) */}
+          <Freeze frame={GROW_LAST} active={frame >= GROW_LAST}>
+            <Video
+              src={staticFile(GROWTH_SRC)}
+              muted
+              trimBefore={GROW_CLIP[0]}
+              playbackRate={GROW_RATE}
+              objectFit="cover"
+              style={growthFill}
+            />
+          </Freeze>
+          {/* The clip's top edge melts into sky, and more sky continues above it for the tilt-up */}
+          <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 260, background: `linear-gradient(180deg, ${SKY} 0%, rgba(170,208,236,0) 100%)` }} />
+          <div style={{ position: "absolute", left: 0, right: 0, top: -1400, height: 1401, background: `linear-gradient(180deg, ${SKY_HIGH} 0%, ${SKY} 100%)` }} />
+        </AbsoluteFill>
+        {/* Light copy straight over the footage (no backdrop panel), kept legible with soft shadows */}
+        <div style={{ position: "absolute", left: 1340, top: 260, width: 520, display: "flex", flexDirection: "column", gap: 24, opacity: copyOut }}>
+          <div style={{ textShadow: "0 2px 10px rgba(0,0,0,0.5)" }}>
+            <Eyebrow delay={8} color="rgba(255,255,255,0.92)">3D reclamation plan</Eyebrow>
+          </div>
+          <BlurIn delay={18}>
+            <div style={{ fontFamily, fontSize: 64, fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.04, color: "#FFFFFF", textShadow: "0 3px 16px rgba(0,0,0,0.45)" }}>Explore it in 3D.</div>
           </BlurIn>
+          <PopIn delay={34} fromY={-40}>
+            <GlassBadge>
+              <div style={{ fontSize: 20, color: theme.muted, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>Growth horizon</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 6 }}>
+                <span style={{ fontSize: 34, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>Year {Math.round(year)}</span>
+                <span style={{ fontSize: 24, fontWeight: 600, color: theme.muted }}>→ 30</span>
+              </div>
+              <div style={{ marginTop: 14, height: 6, borderRadius: 3, background: "rgba(0,0,0,0.08)" }}>
+                <div style={{ width: `${(year / 30) * 100}%`, height: 6, borderRadius: 3, background: colors.forestry }} />
+              </div>
+            </GlassBadge>
+          </PopIn>
           <PopIn delay={70} fromY={-40}>
             <GlassBadge>
               <div style={{ fontSize: 20, color: theme.muted, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>Projected onto</div>
               <div style={{ fontSize: 34, fontWeight: 700, marginTop: 6 }}>Your actual terrain</div>
             </GlassBadge>
           </PopIn>
-          <PopIn delay={110} fromY={-40}>
-            <GlassBadge>
-              <div style={{ fontSize: 20, color: theme.muted, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>Growth horizon</div>
-              <div style={{ fontSize: 34, fontWeight: 700, marginTop: 6 }}>Year 0 → 30</div>
-            </GlassBadge>
-          </PopIn>
         </div>
       </AbsoluteFill>
 
-      {frame >= SPLIT ? (
-        <AbsoluteFill style={{ opacity: bIn }}>
-          <div style={{ position: "absolute", left: 90, top: 200, width: 560, display: "flex", flexDirection: "column", gap: 22 }}>
-            <Eyebrow delay={SPLIT + 10}>Forest zone · 200.4 ha</Eyebrow>
-            <BlurIn delay={SPLIT + 20}>
-              <SilverText size={68}>Native species, chosen per zone.</SilverText>
-            </BlurIn>
-            {SPECIES.map((s, i) => (
-              <PopIn key={s.local} delay={SPLIT + 60 + i * 20} fromY={-40}>
-                <GlassBadge style={{ width: 520, borderRadius: 26 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-                    <div style={{ width: 56, height: 56, borderRadius: 16, background: colors.forestry, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <svg width={30} height={30} viewBox="0 0 24 24" fill="#fff">
-                        <path d="M12 2c-3 3-6 6-6 10a6 6 0 0 0 5 5.9V22h2v-4.1A6 6 0 0 0 18 12c0-4-3-7-6-10z" />
-                      </svg>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 32, fontWeight: 800 }}>{s.local}</div>
-                      <div style={{ fontSize: 22, fontStyle: "italic", color: theme.muted }}>{s.latin}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 32, fontWeight: 800, color: colors.forestry }}>{s.share}%</div>
-                      <div style={{ fontSize: 20, color: theme.muted }}>{s.trees} trees</div>
-                    </div>
-                  </div>
-                </GlassBadge>
-              </PopIn>
-            ))}
-          </div>
-          <div style={{ position: "absolute", left: 690, top: 220, translate: `${(1 - bIn) * 80}px 0px` }}>
-            <MacBook width={1110} src="recordings/takeC_site3d.mp4" trimBefore={Math.round(19.5 * fps)} />
-          </div>
-        </AbsoluteFill>
-      ) : null}
     </AbsoluteFill>
   );
 };
 
 /* ---------- Outro ---------- */
+/** App icon size in the end card, matched to the 150 px wordmark. */
+const OUTRO_ICON = 150;
+/** "Download on the App Store" badge (black, per Apple's badge style). */
+const AppStoreBadge: React.FC = () => (
+  <div
+    style={{
+      marginTop: 44,
+      display: "flex",
+      alignItems: "center",
+      gap: 16,
+      padding: "14px 30px 14px 24px",
+      borderRadius: 18,
+      background: "#000",
+      boxShadow: "0 0 0 2px #A6A6A6, 0 24px 48px -20px rgba(0,0,0,0.45)",
+      color: "#fff",
+      fontFamily,
+    }}
+  >
+    <svg width={50} height={50} viewBox="0 0 24 24" fill="#fff">
+      <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701" />
+    </svg>
+    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
+      <span style={{ fontSize: 20, fontWeight: 500, letterSpacing: "0.01em" }}>Download on the</span>
+      <span style={{ fontSize: 44, fontWeight: 600, letterSpacing: "-0.02em", marginTop: 4 }}>App Store</span>
+    </div>
+  </div>
+);
+
 export const LightOutroScene: React.FC = () => {
   const frame = useCurrentFrame();
   const theme = useTheme();
@@ -994,36 +1383,46 @@ export const LightOutroScene: React.FC = () => {
   return (
     <AbsoluteFill style={{ fontFamily, alignItems: "center", justifyContent: "center" }}>
       <Backdrop />
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 28 }}>
-        <div
-          style={{
-            width: 150,
-            height: 150,
-            borderRadius: 36,
-            background: "linear-gradient(180deg, #FFFFFF 0%, #ECECEE 100%)",
-            boxShadow: "0 30px 60px -20px rgba(0,0,0,0.35), 0 0 0 1px rgba(0,0,0,0.05)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            scale: 0.6 + 0.4 * icon,
-            opacity: interpolate(frame, [6, 18], [0, 1], clamp),
-          }}
-        >
-          <Img src={staticFile("logo-a.svg")} style={{ width: 92, height: 92 }} />
+      {/* Topographic contour map revealed from the centre; a soft wash keeps the copy clear */}
+      <ContourLines />
+      <AbsoluteFill style={{ background: "radial-gradient(ellipse 760px 420px at 50% 50%, rgba(243,242,239,0.92) 0%, rgba(243,242,239,0.7) 55%, rgba(243,242,239,0) 100%)" }} />
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        {/* Lockup: icon sized to the wordmark, sitting on its left */}
+        <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
+          <div
+            style={{
+              width: OUTRO_ICON,
+              height: OUTRO_ICON,
+              borderRadius: OUTRO_ICON * 0.225,
+              flexShrink: 0,
+              background: "linear-gradient(180deg, #FFFFFF 0%, #ECECEE 100%)",
+              boxShadow: "0 28px 56px -20px rgba(0,0,0,0.32), 0 0 0 1px rgba(0,0,0,0.05)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              scale: 0.6 + 0.4 * icon,
+              opacity: interpolate(frame, [6, 18], [0, 1], clamp),
+            }}
+          >
+            <Img src={staticFile("logo-a.svg")} style={{ width: OUTRO_ICON * 0.62, height: OUTRO_ICON * 0.62 }} />
+          </div>
+          <BlurIn delay={20} duration={44}>
+            <SilverText size={150}>GeoWise</SilverText>
+          </BlurIn>
         </div>
-        <BlurIn delay={20} duration={44}>
-          <SilverText size={150}>GeoWise</SilverText>
-        </BlurIn>
         <WipeIn delay={58} duration={40}>
-          <div style={{ fontSize: 56, fontWeight: 600, color: theme.text, letterSpacing: "-0.02em" }}>
+          <div style={{ marginTop: 40, fontSize: 52, fontWeight: 600, color: theme.text, letterSpacing: "-0.02em" }}>
             Mind your future mining site.
           </div>
         </WipeIn>
         <BlurIn delay={100} duration={36}>
-          <div style={{ marginTop: 20, color: theme.muted, fontSize: 28, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase" }}>
+          <div style={{ marginTop: 20, color: theme.muted, fontSize: 24, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase" }}>
             Land-use suitability · 3D reclamation planning
           </div>
         </BlurIn>
+        <PopIn delay={135} fromY={30}>
+          <AppStoreBadge />
+        </PopIn>
       </div>
     </AbsoluteFill>
   );

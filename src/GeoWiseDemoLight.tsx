@@ -14,10 +14,12 @@ import {
   LightOutroScene,
   LightThreeDScene,
   LightVisionScene,
+  THREED_FRAMES,
+  VISION_FRAMES,
 } from "./scenes/LightScenes";
 
 /**
- * Light (Mac) version — 2:04 at 30 fps (3720 frames).
+ * Light (Mac) version — 1:51 at 30 fps (3316 frames).
  * 0:00–0:39  problem context (drone → over-the-shoulder → GeoWise opens on the Mac)
  * then the same six voice-over beats as the dark cut, every recording shown
  * full-screen inside a MacBook Pro frame (no UI cropping).
@@ -48,15 +50,16 @@ export const GeoWiseDemoLight: React.FC = () => {
             <LightMacFlip />
           </TransitionSeries.Sequence>
           <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 8 })} />
-          <TransitionSeries.Sequence name="2 · Integrated analysis" durationInFrames={261}>
+          <TransitionSeries.Sequence name="2 · Integrated analysis" durationInFrames={254}>
             <LightIntegratedScene />
           </TransitionSeries.Sequence>
-          <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
-          <TransitionSeries.Sequence name="5 · Beyond the map" durationInFrames={180}>
+          {/* Short fade: beat 5 opens on the same laptop, so only the text changes here. */}
+          <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 8 })} />
+          <TransitionSeries.Sequence name="5 · Beyond the map" premountFor={60} durationInFrames={VISION_FRAMES}>
             <LightVisionScene />
           </TransitionSeries.Sequence>
-          <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
-          <TransitionSeries.Sequence name="6 · 3D & species" durationInFrames={720}>
+          <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 20 })} />
+          <TransitionSeries.Sequence name="6 · 3D & growth" premountFor={60} durationInFrames={THREED_FRAMES}>
             <LightThreeDScene />
           </TransitionSeries.Sequence>
           <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
