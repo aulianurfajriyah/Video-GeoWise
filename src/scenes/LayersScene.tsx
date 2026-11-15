@@ -134,9 +134,12 @@ export const LAYERS: Layer[] = [
   { key: "el", label: "Elevation", color: ELEV_COLOR, appear: 164, Art: Elevation },
 ];
 
-const COLLAPSE = [222, 262] as const;
+const COLLAPSE_DEFAULT = [222, 262] as const;
+type Collapse = readonly [number, number];
+/** Timing used by the light cut so each layer lands on its word in the voice-over. */
+export const LAYERS_VO_TIMING = { appear: [14, 44, 79, 118, 154, 186], collapse: [235, 272] as Collapse, duration: 345 };
 
-const Plane: React.FC<{ layer: Layer; index: number }> = ({ layer, index }) => {
+const Plane: React.FC<{ layer: Layer; index: number; COLLAPSE: Collapse }> = ({ layer, index, COLLAPSE }) => {
   const frame = useCurrentFrame();
   const theme = useTheme();
   const enter = interpolate(frame, [layer.appear, layer.appear + 26], [0, 1], {
@@ -173,7 +176,7 @@ const Plane: React.FC<{ layer: Layer; index: number }> = ({ layer, index }) => {
   );
 };
 
-const GridOverlay: React.FC = () => {
+const GridOverlay: React.FC<{ COLLAPSE: Collapse }> = ({ COLLAPSE }) => {
   const frame = useCurrentFrame();
   const theme = useTheme();
   const light = theme.mode === "light";
@@ -245,15 +248,17 @@ const LabelRow: React.FC<{ layer: Layer }> = ({ layer }) => {
   );
 };
 
-export const LayersScene: React.FC = () => {
+export const LayersScene: React.FC<{ timing?: { appear: number[]; collapse: Collapse; duration: number } }> = ({ timing }) => {
   const frame = useCurrentFrame();
+  const COLLAPSE = timing?.collapse ?? COLLAPSE_DEFAULT;
+  const layers = timing ? LAYERS.map((l, i) => ({ ...l, appear: timing.appear[i] })) : LAYERS;
   const theme = useTheme();
   const labelsOut = interpolate(frame, [COLLAPSE[0], COLLAPSE[0] + 24], [1, 0], clamp);
   const caption = interpolate(frame, [COLLAPSE[1] + 6, COLLAPSE[1] + 34], [0, 1], {
     ...clamp,
     easing: Easing.bezier(...EASE_OUT),
   });
-  const spin = interpolate(frame, [0, 330], [-44, -28]);
+  const spin = interpolate(frame, [0, timing?.duration ?? 330], [-44, -28]);
   const stackX = interpolate(frame, [COLLAPSE[0], COLLAPSE[1] + 20], [1180, 960], {
     ...clamp,
     easing: Easing.bezier(0.65, 0, 0.35, 1),
@@ -263,7 +268,7 @@ export const LayersScene: React.FC = () => {
     <AbsoluteFill style={{ fontFamily }}>
       <Backdrop />
       <div style={{ position: "absolute", left: 150, top: 330, opacity: labelsOut, display: "flex", flexDirection: "column", gap: 30 }}>
-        {LAYERS.map((l) => (
+        {layers.map((l) => (
           <LabelRow key={l.key} layer={l} />
         ))}
       </div>
@@ -275,10 +280,10 @@ export const LayersScene: React.FC = () => {
             transform: `rotateX(58deg) rotateZ(${spin}deg)`,
           }}
         >
-          {LAYERS.map((l, i) => (
-            <Plane key={l.key} layer={l} index={i} />
+          {layers.map((l, i) => (
+            <Plane key={l.key} layer={l} index={i} COLLAPSE={COLLAPSE} />
           ))}
-          <GridOverlay />
+          <GridOverlay COLLAPSE={COLLAPSE} />
         </div>
       </div>
 

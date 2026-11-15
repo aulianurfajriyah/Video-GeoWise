@@ -5,6 +5,7 @@ import { LAYERS, S, type Layer } from "./LayersScene";
 import { CARD_PT, InputCard, START_BTN_PT } from "./InputCard";
 import { Backdrop, BlurIn, GlassBadge, PopIn, SilverText, WipeIn } from "../components";
 import { MacBook } from "../MacBook";
+import { Exit, NativeSpecies } from "./NativeSpecies";
 import { ContourLines } from "../ContourLines";
 import { colors, EASE_OUT, fontFamily, REC, useTheme } from "../theme";
 
@@ -61,10 +62,10 @@ export const LightIntegratedScene: React.FC = () => {
         <BlurIn delay={8}>
           <SilverText size={84}>Every layer.</SilverText>
         </BlurIn>
-        <BlurIn delay={40}>
+        <BlurIn delay={48}>
           <SilverText size={84}>Every factor.</SilverText>
         </BlurIn>
-        <WipeIn delay={88} duration={40} style={{ marginTop: 30 }}>
+        <WipeIn delay={105} duration={40} style={{ marginTop: 30 }}>
           <div style={{ fontSize: 48, fontWeight: 700, color: theme.muted, letterSpacing: "-0.02em" }}>
             One integrated analysis.
           </div>
@@ -465,8 +466,9 @@ const CAM_KEYS: { f: number; x: number; y: number }[] = [
 const CAM_ZOOM = 1.75;
 const CAM_TARGET = { x: 650, y: 560 }; // focus lands left of centre, leaving room for the cards
 const ZOOM_IN: [number, number] = [26, 80];
-// Pull back to the wide shot so the badges sit beside the Mac before the flip.
-const ZOOM_OUT: [number, number] = [482, 520];
+// Pull back to the wide shot so the badges sit beside the Mac before the flip. It runs to the
+// scene's last frame still moving (no stop), handing its motion straight to the flip.
+const ZOOM_OUT: [number, number] = [486, 525];
 
 const useCamera = () => {
   const smooth = Easing.inOut(Easing.cubic);
@@ -475,7 +477,10 @@ const useCamera = () => {
     const fx = interpolate(frame, fs, CAM_KEYS.map((k) => k.x), { ...clamp, easing: smooth });
     const fy = interpolate(frame, fs, CAM_KEYS.map((k) => k.y), { ...clamp, easing: smooth });
     const focus = rec(fx, fy);
-    const k = interpolate(frame, [...ZOOM_IN, ...ZOOM_OUT], [0, 1, 1, 0], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
+    const k =
+      frame < ZOOM_OUT[0]
+        ? interpolate(frame, [...ZOOM_IN], [0, 1], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) })
+        : interpolate(frame, [...ZOOM_OUT], [1, 0], { ...clamp, easing: Easing.bezier(0.55, 0, 0.65, 0.8) });
     const z = 1 + (CAM_ZOOM - 1) * k;
     // screen = stage * z + t ; at k = 1 the focus sits on CAM_TARGET, at k = 0 it is the identity.
     const tx = k * (CAM_TARGET.x - focus.x * z);
@@ -610,7 +615,7 @@ export const LightAllocationScene: React.FC = () => {
 };
 
 /* ---------- 4 → 2: close, turn around, open ---------- */
-export const MAC_FLIP_FRAMES = 70;
+export const MAC_FLIP_FRAMES = 98;
 
 /** A 3D MacBook: hinged lid with thickness + aluminium base with keyboard, trackpad and a soft contact shadow. */
 const MacModel: React.FC<{
@@ -810,7 +815,8 @@ export const LightMacFlip: React.FC = () => {
   const io = Easing.bezier(0.65, 0, 0.35, 1);
   const W = MAC_BOX.w;
   const lidH = (W - W * 0.038) * (982 / 1512) + W * 0.019 * 2.2;
-  const from = { left: MAC_BOX.left, top: MAC_BOX.top, w: MAC_BOX.w, rotY: 0 }; // beat 4's last frame
+  // Beat 4's last frame (hard cut), including its slow drift turn (2° per 700 frames, 525 frames in).
+  const from = { left: MAC_BOX.left, top: MAC_BOX.top, w: MAC_BOX.w, rotY: (2 * 525) / 700 };
   // The model is scaled about the hinge centre, so place it where beat 2's (smaller) Mac has its hinge.
   const endScale = INTEGRATED_MAC.w / W;
   const to = {
@@ -820,13 +826,19 @@ export const LightMacFlip: React.FC = () => {
     rotY: 0,
   };
 
-  // Frames 0–8 and 62–70 sit under the crossfades, so the laptop holds still there.
-  const lift = interpolate(frame, [8, 26, 46, 62], [0, 1, 1, 0], { ...clamp, easing: io });
+  // One continuous move: it starts already moving on frame 0 (picking up beat 4's pull-back
+  // under the crossfade, no hold) and lands softly by frame 76, holding only under the
+  // closing crossfade (90–98).
+  const lift =
+    frame < 64
+      ? interpolate(frame, [0, 24], [0, 1], { ...clamp, easing: Easing.bezier(0.25, 0.35, 0.35, 1) })
+      : interpolate(frame, [64, 90], [1, 0], { ...clamp, easing: Easing.bezier(0.45, 0, 0.2, 1) });
   // Lid folds half way (about 55°), never shut.
-  const half = interpolate(frame, [10, 28, 42, 60], [0, 1, 1, 0], { ...clamp, easing: io });
-  // One full turn while the lid is half closed.
-  const spin = interpolate(frame, [20, 52], [0, 360], { ...clamp, easing: io });
-  const move = interpolate(frame, [8, 62], [0, 1], { ...clamp, easing: io });
+  const half = interpolate(frame, [4, 26, 62, 86], [0, 1, 1, 0], { ...clamp, easing: io });
+  // One full turn while the lid is half closed: spread over 2 s with a gentle ease, so it
+  // peaks at ~9° a frame (a faster turn strobed at 30 fps).
+  const spin = interpolate(frame, [12, 74], [0, 360], { ...clamp, easing: Easing.bezier(0.42, 0, 0.58, 1) });
+  const move = interpolate(frame, [0, 90], [0, 1], { ...clamp, easing: Easing.bezier(0.3, 0.2, 0.2, 1) });
   const left = lerp(from.left, to.left, move);
   const top = lerp(from.top, to.top, move);
   const scale = lerp(1, endScale, move) * (1 - 0.4 * lift);
@@ -835,12 +847,14 @@ export const LightMacFlip: React.FC = () => {
   const lidAngle = -55 * half + 6 * lift;
   // Screen content swaps while the screen faces away (back of the lid towards camera).
   const image = spin < 180 ? "stills/alloc.png" : "stills/layers_start.png";
-  const badgesOut = interpolate(frame, [8, 22], [0, 1], { ...clamp, easing: Easing.in(Easing.cubic) });
+  const badgesOut = interpolate(frame, [0, 14], [0, 1], { ...clamp, easing: Easing.in(Easing.cubic) });
   // While in 3D the laptop is pulled to the middle of the frame (hinge at y 600).
   const dx = (960 - (left + W / 2)) * lift;
   const dy = (600 - (top + lidH)) * lift;
   const cx = left + W / 2 + dx;
-  const cy = top + lidH / 2 + dy;
+  // Camera level with the hinge at rest (deck seen edge-on, like the flat mockup it cuts from),
+  // rising to look down on the keyboard as the laptop lifts.
+  const cy = top + lidH * (1 - 0.5 * lift) + dy;
   const D = lidH * 0.92;
 
   return (
@@ -883,7 +897,7 @@ export const LightMacFlip: React.FC = () => {
 // the app's view switcher pops up over the (blurred) screen, the cursor taps "Simulation",
 // the screen switches to the simulation view, the camera zooms into the pit until it
 // matches the first frame of the satellite-to-ground clip, and the clip takes over.
-export const VISION_FRAMES = 256;
+export const VISION_FRAMES = 262; // TAB.clip (168) + the clip to its still end (80) + the 14-frame hold under the dissolve
 const VISION_MAC = { left: 460, top: 270, w: 1000 };
 const VISION_SCREEN = (() => {
   const bezel = VISION_MAC.w * 0.019;
@@ -922,79 +936,23 @@ const belowMenu: React.CSSProperties = {
 const SCREEN_TABS = { cx: 0.499, cy: MENU + (1 - MENU) * (35 / 1255), w: 0.2925 };
 /** The clip's first frame is this crop of the Simulation screenshot (screenshot px, 2000×1255). */
 const CLIP_CROP = { x: 473, y: 480, w: 994, h: 560 };
-const SATELLITE_CLIP = "seedance/satellite_to_ground.mp4";
-/** The clip creeps for its first ~0.6 s, which read as a pause after our zoom, so it is
- * entered at clip frame 15 (24 fps) — already 1.30× in and moving ≈ 3 %/frame (measured). */
-const CLIP_TRIM = 19; // 30 fps frames ≈ clip frame 15
+/** Satellite → ground → plant-level view, pre-built as one 30 fps clip (83 frames):
+ * the satellite dive from clip frame 19 (already 1.30× in, entered at 1.5×), its slow
+ * ground-level tail sped up 5–9× so it never stalls, then the ground-to-plant clip (24 → 30 fps,
+ * 0.85×), which tips up from the ground to the simulation's own low view. */
+const SATELLITE_CLIP = "seedance/satellite_to_plant.mp4";
+/** Clip frame where the tip-up has come to rest; the clip holds it under the dissolve. */
+const CLIP_REST = 80;
 const CLIP_TRIM_SCALE = 1.3;
-/** The clip plays 1.5× faster (its slow mid-section dragged); its zoom speed scales with it. */
-const CLIP_RATE = 1.5;
-const CLIP_ZOOM_RATE = 0.03 * CLIP_RATE;
+/** Zoom speed of the clip's first frames (log-scale per frame), matched by our zoom in. */
+const CLIP_ZOOM_RATE = 0.045;
+/** The clip's resting frame vs the simulation's first (as beat 6 shows it, cover-fitted at 1×):
+ * same hill and rocks, framed differently — best match (gradient correlation on the ridge and
+ * rocks) is the clip scaled 1.04× / 1.12× about the centre and moved 24 px right, 8 px up.
+ * The clip eases into that alignment as its tip-up settles, then both hold still while they
+ * dissolve, so the view lands exactly on the simulation's. */
+const CLIP_ALIGN = { sx: 1.04, sy: 1.12, tx: 24, ty: -8, frames: [168 + 56, 168 + CLIP_REST] as const };
 const CLIP_DISSOLVE = 4;
-/** The clip plays full-screen until clip frame 88 (GROUND_STILL_AT, its cleanest ground
- * frame), where it hands over to that exact frame as a still, and only then does the ground
- * tip back toward the horizon and glide toward the viewer (camera pitching up while flying
- * forward), into the simulation's low view. Tilting only the still keeps the whole plane one
- * rigid surface (a playing, zooming video inside a still surround read as a window). Its zoom-blurred
- * border feathers into ground that extends it everywhere: a seamless soil texture (clip frame
- * 112, rescaled 0.9× to frame 88's scale, shading evened out, rocks removed so nothing repeats
- * visibly), pre-baked as one image. */
-const GROUND_FRAME = "seedance/ground_frame.jpg";
-const GROUND_STILL_AT = 214; // scene frame showing clip frame 88
-/** Frame 88 with its blotchy shading evened out like the texture, so it doesn't read as a
- * darker patch; it dissolves in over the still during the tilt. */
-const GROUND_FRAME_FLAT = "seedance/ground_frame_flat.jpg";
-const GROUND_MOSAIC = "seedance/ground_mosaic.jpg";
-const SHARP = { x: 240, y: 135, w: 1440, h: 810 };
-const TILT_FROM = GROUND_STILL_AT;
-const TILT_DEG = 40;
-/** The clip's own zoom stalls once the ground fills the frame (clip frame ~70), which read as
- * a pause before the tilt; a camera push-in starts right there on the full-screen clip and
- * carries straight on through the tilt. */
-const PUSH_FROM = 194;
-const PUSH_Z = 480;
-const GLIDE = 650; // px the ground travels toward the viewer (plane coordinates)
-
-const GroundPlane: React.FC<{ tilt: number; push: number; glide: number; feather: number; showMosaic: boolean; children: React.ReactNode }> = ({
-  tilt,
-  push,
-  glide,
-  feather,
-  showMosaic,
-  children,
-}) => {
-  const f = 18 * feather;
-  const edge = (dir: string) => `linear-gradient(${dir}, transparent 0%, black ${f}%, black ${100 - f}%, transparent 100%)`;
-  const mask = feather > 0 ? `${edge("90deg")}, ${edge("180deg")}` : undefined;
-  return (
-    <AbsoluteFill style={{ perspective: 1400, perspectiveOrigin: "50% 50%", overflow: "hidden" }}>
-      <AbsoluteFill
-        style={{
-          transformOrigin: "50% 100%",
-          transform: `translateZ(${push}px) rotateX(${TILT_DEG * tilt}deg) translateY(${glide}px)`,
-          willChange: "transform",
-        }}
-      >
-        {/* Mounted from the clip's start (hidden) so the image is loaded before it shows */}
-        <Img
-          src={staticFile(GROUND_MOSAIC)}
-          style={{
-            position: "absolute",
-            left: SHARP.x - 2 * SHARP.w,
-            top: SHARP.y - 5 * SHARP.h,
-            width: 5 * SHARP.w,
-            height: 7 * SHARP.h,
-            opacity: showMosaic ? 1 : 0,
-          }}
-        />
-        <AbsoluteFill style={{ maskImage: mask, WebkitMaskImage: mask, maskComposite: "intersect", WebkitMaskComposite: "source-in" }}>
-          {children}
-        </AbsoluteFill>
-      </AbsoluteFill>
-    </AbsoluteFill>
-  );
-};
-
 /** Beat 2 (254 frames) overlaps beat 5 by an 8-frame fade, so beat 5's frame 0 is beat 2's frame 246. */
 const INTEGRATED_FRAMES = 254;
 const INTO_VISION_FADE = 8;
@@ -1152,6 +1110,7 @@ export const LightVisionScene: React.FC = () => {
         : cropLog + CLIP_ZOOM_RATE * (frame - TAB.toCrop[1]);
   const camScale = Math.exp(camLog);
   const clipIn = interpolate(frame, [TAB.clip, TAB.clip + CLIP_DISSOLVE], [0, 1], clamp);
+  const align = interpolate(frame, [...CLIP_ALIGN.frames], [0, 1], { ...clamp, easing: Easing.bezier(0.45, 0, 0.3, 1) });
 
   return (
     <AbsoluteFill style={{ fontFamily }}>
@@ -1226,28 +1185,23 @@ export const LightVisionScene: React.FC = () => {
           </div>
         ) : null}
       </AbsoluteFill>
-      {/* Satellite → ~15 m above the ground (generated clip); starts on the zoomed frame above,
-          then tips back and glides forward as soon as the ground fills the frame */}
-      {frame >= TAB.clip - 60 ? (
-        <AbsoluteFill style={{ opacity: clipIn }}>
-          <GroundPlane
-            push={PUSH_Z * interpolate(frame, [PUSH_FROM, VISION_FRAMES], [0, 1], { ...clamp, easing: Easing.bezier(0.05, 0.55, 0.45, 1) })}
-            tilt={interpolate(frame, [TILT_FROM, VISION_FRAMES], [0, 1], { ...clamp, easing: Easing.bezier(0.2, 0.12, 0.45, 1) })}
-            glide={GLIDE * interpolate(frame, [TILT_FROM, VISION_FRAMES], [0, 1], { ...clamp, easing: Easing.bezier(0.25, 0.2, 0.7, 0.85) })}
-            feather={interpolate(frame, [TILT_FROM, TILT_FROM + 10], [0, 1], clamp)}
-            showMosaic={frame >= TILT_FROM}
-          >
-            <Sequence from={TAB.clip} durationInFrames={GROUND_STILL_AT + 1 - TAB.clip} premountFor={60}>
-              <Video src={staticFile(SATELLITE_CLIP)} trimBefore={CLIP_TRIM} playbackRate={CLIP_RATE} muted objectFit="cover" style={{ width: "100%", height: "100%" }} />
-            </Sequence>
-            <Img src={staticFile(GROUND_FRAME)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: frame >= GROUND_STILL_AT ? 1 : 0 }} />
-            <Img
-              src={staticFile(GROUND_FRAME_FLAT)}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: interpolate(frame, [GROUND_STILL_AT, GROUND_STILL_AT + 8], [0, 1], clamp) }}
-            />
-          </GroundPlane>
+      {/* Satellite → ground → plant-level view (generated clips); starts on the zoomed frame above */}
+      <Sequence from={TAB.clip} premountFor={60}>
+        {/* Outer: the simulation's fixed 1.3× framing; inner: clip → simulation alignment */}
+        <AbsoluteFill style={{ scale: lerp(1, SIM_SCALE, align), transformOrigin: SIM_ORIGIN }}>
+        <AbsoluteFill
+          style={{
+            opacity: clipIn,
+            scale: `${lerp(1, CLIP_ALIGN.sx, align)} ${lerp(1, CLIP_ALIGN.sy, align)}`,
+            translate: `${CLIP_ALIGN.tx * align}px ${CLIP_ALIGN.ty * align}px`,
+          }}
+        >
+          <Freeze frame={CLIP_REST} active={(f) => f >= CLIP_REST}>
+            <Video src={staticFile(SATELLITE_CLIP)} muted objectFit="cover" style={{ width: "100%", height: "100%" }} />
+          </Freeze>
         </AbsoluteFill>
-      ) : null}
+        </AbsoluteFill>
+      </Sequence>
       {cursorOpacity > 0 ? (
         <Cursor
           x={lerp(1500, target.x, cIn)}
@@ -1263,65 +1217,93 @@ export const LightVisionScene: React.FC = () => {
 /* ---------- Beat 6 ---------- */
 
 /** Beat 6 part A: the growth simulation plays straight away, slowed so its growth
- * (clip frames 3 → 66) spans exactly 5 s while the badge counts Year 0 → 30. */
+ * (clip frames 3 → 66) spans GROW_FRAMES while the badge counts Year 0 → 30. */
 const GROWTH_SRC = "recordings/simulation_growth.mp4";
 /** Clip frames (30 fps) where growth starts and finishes. */
 const GROW_CLIP = [3, 66] as const;
-const GROW_FRAMES = 150; // 5 s
+const GROW_FRAMES = 210; // 7 s: the counter reaches 30 just before "30 years" is said
 const GROW_RATE = (GROW_CLIP[1] - GROW_CLIP[0]) / GROW_FRAMES;
 /** Tilt up to the sky after the forest has grown; the scene ends shortly after. */
-const SKY_PAN = [GROW_FRAMES + 20, GROW_FRAMES + 80] as const;
-export const THREED_FRAMES = GROW_FRAMES + 95;
+/** The forest holds while "See what your land could become 30 years from now" is read;
+ * the tilt to the sky starts on "Starting today". */
+const SKY_PAN = [345, 405] as const;
+export const THREED_FRAMES = 420;
 const SKY = "#AAD0EC"; // the clip's sky at its top edge
+/** The simulation is framed 1.3× (anchored at the ground) so the grown trees fill the frame;
+ * fixed, no zoom animation. Beat 5's clip lands on exactly this framing. */
+export const SIM_SCALE = 1.3;
+export const SIM_ORIGIN = "40% 100%";
+/** End-card background tone; the sky above the simulation fades into it. */
+const END_TONE = "#F3F2EF";
 const SKY_HIGH = "#DCEBF6";
 /** Last scene frame the clip still has footage for; it holds there afterwards. */
 const GROW_LAST = Math.floor((180 - GROW_CLIP[0] - 1) / GROW_RATE);
+/** The simulation holds its first frame while beat 5's clip dissolves into it (same view, both
+ * still), then the growth starts. */
+const GROW_HOLD = 14;
 const growthFill: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%" };
 
 export const LightThreeDScene: React.FC = () => {
   const frame = useCurrentFrame();
   const theme = useTheme();
-  const year = interpolate(frame, [0, GROW_FRAMES], [0, 30], clamp);
-  // Framed tighter (anchored at the ground) so the tall trees fill the frame and stay in
-  // shot as the camera tilts up; a slow push in while the forest grows.
-  const pushA = interpolate(frame, [0, THREED_FRAMES], [1.3, 1.36]);
+  const year = interpolate(frame, [GROW_HOLD, GROW_HOLD + GROW_FRAMES], [0, 30], clamp);
   // Once grown, the camera tilts up past the treetops (they fade into the sky and leave the
   // frame), so the end card dissolves in from clear sky.
   const pan = interpolate(frame, [...SKY_PAN], [0, 1], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
-  const copyOut = interpolate(frame, [SKY_PAN[0] - 10, SKY_PAN[0] + 20], [1, 0], clamp);
-  // Carries the ground shot's pitch-up through the crossfade: the view is still settling
-  // downward as it fades in, so the camera move reads as one continuous motion.
-  const settleIn = interpolate(frame, [0, 36], [1, 0], { ...clamp, easing: Easing.bezier(0.2, 0.6, 0.35, 1) });
+  // Every overlay leaves before the tilt to the sky: each part slides off towards its side and
+  // fades, a few frames after the one before (follow-through).
+  const exitAt = SKY_PAN[0] - 30;
 
   return (
     <AbsoluteFill style={{ fontFamily }}>
       <Backdrop />
       <AbsoluteFill>
         {/* The growth simulation full-screen (no laptop), continuing from the ground shot */}
-        <AbsoluteFill style={{ scale: pushA * (1 + 0.12 * settleIn), transformOrigin: "40% 100%", translate: `0px ${pan * 1600}px` }}>
+        {/* Fixed framing: it opens on exactly the view the ground-to-plant clip lands on */}
+        <AbsoluteFill style={{ scale: SIM_SCALE, transformOrigin: SIM_ORIGIN, translate: `0px ${pan * 1600}px` }}>
           {/* One video element the whole time (swapping elements made the preview blink) */}
-          <Freeze frame={GROW_LAST} active={frame >= GROW_LAST}>
-            <Video
-              src={staticFile(GROWTH_SRC)}
-              muted
-              trimBefore={GROW_CLIP[0]}
-              playbackRate={GROW_RATE}
-              objectFit="cover"
-              style={growthFill}
-            />
+          <Freeze frame={GROW_HOLD} active={frame < GROW_HOLD}>
+            <Sequence from={GROW_HOLD} layout="none">
+              <Freeze frame={GROW_LAST} active={(f) => f >= GROW_LAST}>
+                <Video
+                  src={staticFile(GROWTH_SRC)}
+                  muted
+                  trimBefore={GROW_CLIP[0]}
+                  playbackRate={GROW_RATE}
+                  objectFit="cover"
+                  style={growthFill}
+                />
+              </Freeze>
+            </Sequence>
           </Freeze>
           {/* The clip's top edge melts into sky, and more sky continues above it for the tilt-up */}
           <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 260, background: `linear-gradient(180deg, ${SKY} 0%, rgba(170,208,236,0) 100%)` }} />
-          <div style={{ position: "absolute", left: 0, right: 0, top: -1400, height: 1401, background: `linear-gradient(180deg, ${SKY_HIGH} 0%, ${SKY} 100%)` }} />
+          {/* Tall enough that the tilt never reaches its edge; it ends on the end card's own tone,
+              so the dissolve into it is soft */}
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: -2400,
+              height: 2401,
+              background: `linear-gradient(180deg, ${END_TONE} 0%, ${END_TONE} 45%, #E8EEF1 62%, ${SKY_HIGH} 80%, ${SKY} 100%)`,
+            }}
+          />
         </AbsoluteFill>
         {/* Light copy straight over the footage (no backdrop panel), kept legible with soft shadows */}
-        <div style={{ position: "absolute", left: 1340, top: 260, width: 520, display: "flex", flexDirection: "column", gap: 24, opacity: copyOut }}>
-          <div style={{ textShadow: "0 2px 10px rgba(0,0,0,0.5)" }}>
+        {/* Left: native species flying into their zones on the site map */}
+        <NativeSpecies exitAt={exitAt} />
+        <div style={{ position: "absolute", left: 1340, top: 260, width: 520, display: "flex", flexDirection: "column", gap: 24 }}>
+          <Exit at={exitAt} order={0} dir={1} style={{ textShadow: "0 2px 10px rgba(0,0,0,0.5)" }}>
             <Eyebrow delay={8} color="rgba(255,255,255,0.92)">3D reclamation plan</Eyebrow>
-          </div>
+          </Exit>
+          <Exit at={exitAt} order={1} dir={1}>
           <BlurIn delay={18}>
             <div style={{ fontFamily, fontSize: 64, fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.04, color: "#FFFFFF", textShadow: "0 3px 16px rgba(0,0,0,0.45)" }}>Explore it in 3D.</div>
           </BlurIn>
+          </Exit>
+          <Exit at={exitAt} order={2} dir={1}>
           <PopIn delay={34} fromY={-40}>
             <GlassBadge>
               <div style={{ fontSize: 20, color: theme.muted, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>Growth horizon</div>
@@ -1334,12 +1316,15 @@ export const LightThreeDScene: React.FC = () => {
               </div>
             </GlassBadge>
           </PopIn>
+          </Exit>
+          <Exit at={exitAt} order={3} dir={1}>
           <PopIn delay={70} fromY={-40}>
             <GlassBadge>
               <div style={{ fontSize: 20, color: theme.muted, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>Projected onto</div>
               <div style={{ fontSize: 34, fontWeight: 700, marginTop: 6 }}>Your actual terrain</div>
             </GlassBadge>
           </PopIn>
+          </Exit>
         </div>
       </AbsoluteFill>
 
@@ -1348,8 +1333,10 @@ export const LightThreeDScene: React.FC = () => {
 };
 
 /* ---------- Outro ---------- */
-/** App icon size in the end card, matched to the 150 px wordmark. */
-const OUTRO_ICON = 150;
+/** End-card app icon: the G mark is about the wordmark's cap height (150 px Inter ≈ 109 px caps),
+ * in a tile that frames it tightly rather than dwarfing it. */
+const OUTRO_ICON = 132;
+const OUTRO_MARK = 0.8;
 /** "Download on the App Store" badge (black, per Apple's badge style). */
 const AppStoreBadge: React.FC = () => (
   <div
@@ -1388,7 +1375,7 @@ export const LightOutroScene: React.FC = () => {
       <AbsoluteFill style={{ background: "radial-gradient(ellipse 760px 420px at 50% 50%, rgba(243,242,239,0.92) 0%, rgba(243,242,239,0.7) 55%, rgba(243,242,239,0) 100%)" }} />
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
         {/* Lockup: icon sized to the wordmark, sitting on its left */}
-        <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 30 }}>
           <div
             style={{
               width: OUTRO_ICON,
@@ -1404,13 +1391,13 @@ export const LightOutroScene: React.FC = () => {
               opacity: interpolate(frame, [6, 18], [0, 1], clamp),
             }}
           >
-            <Img src={staticFile("logo-a.svg")} style={{ width: OUTRO_ICON * 0.62, height: OUTRO_ICON * 0.62 }} />
+            <Img src={staticFile("logo-a.svg")} style={{ width: OUTRO_ICON * OUTRO_MARK, height: OUTRO_ICON * OUTRO_MARK }} />
           </div>
           <BlurIn delay={20} duration={44}>
             <SilverText size={150}>GeoWise</SilverText>
           </BlurIn>
         </div>
-        <WipeIn delay={58} duration={40}>
+        <WipeIn delay={62} duration={40}>
           <div style={{ marginTop: 40, fontSize: 52, fontWeight: 600, color: theme.text, letterSpacing: "-0.02em" }}>
             Mind your future mining site.
           </div>

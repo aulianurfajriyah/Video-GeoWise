@@ -1,6 +1,6 @@
 import { Composition } from "remotion";
 import { GeoWiseDemo } from "./GeoWiseDemo";
-import { GeoWiseDemoLight } from "./GeoWiseDemoLight";
+import { GEOWISE_LIGHT_FRAMES, GeoWiseDemoLight } from "./GeoWiseDemoLight";
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -16,7 +16,7 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="GeoWiseDemoLight"
         component={GeoWiseDemoLight}
-        durationInFrames={3316}
+        durationInFrames={GEOWISE_LIGHT_FRAMES}
         fps={30}
         width={1920}
         height={1080}

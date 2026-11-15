@@ -12,6 +12,8 @@ const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 const DRONE = [0, 540] as const;
 const SHOULDER = [520, 850] as const;
 const REVEAL = 830;
+/** Intro length in the voice-over cut: the reveal holds while "Meet GeoWise…" is read. */
+export const INTRO_FRAMES = 1327;
 
 /* Drone footage: clips 1, 2 (reversed), 3 from /video, cut to 1080p30,
    cross-dissolved, each colour-graded per frame to one neutral white balance. */
@@ -276,18 +278,18 @@ export const LightIntroScene: React.FC = () => {
         <Backdrop />
         <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
           <div style={{ position: "absolute", top: 70, width: "100%", textAlign: "center" }}>
-            <BlurIn delay={150} duration={36}>
+            <BlurIn delay={90} duration={36}>
               <SilverText size={84}>Meet GeoWise.</SilverText>
             </BlurIn>
           </div>
           <div
             style={{
-              marginTop: interpolate(frame, [REVEAL + 140, REVEAL + 190], [0, 150], {
+              marginTop: interpolate(frame, [REVEAL + 80, REVEAL + 130], [0, 150], {
                 ...clamp,
                 easing: Easing.bezier(0.65, 0, 0.35, 1),
               }),
               opacity: macIn,
-              scale: interpolate(frame, [REVEAL, REVEAL + 60, REVEAL + 140, REVEAL + 190], [1.25, 1, 1, 0.92], {
+              scale: interpolate(frame, [REVEAL, REVEAL + 60, REVEAL + 80, REVEAL + 130, INTRO_FRAMES], [1.25, 1, 1, 0.92, 0.95], {
                 ...clamp,
                 easing: Easing.bezier(0.16, 1, 0.3, 1),
               }),
