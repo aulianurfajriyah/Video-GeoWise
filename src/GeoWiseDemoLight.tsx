@@ -97,6 +97,7 @@ const VO: Cue[] = [
   {
     file: "vo-4",
     from: AT.layers - 94,
+    trimAfter: s(14.5),
     lines: [
       [0.4, 3.3, "It brings together"],
       [3.5, 6.9, "road, river, power line,"],
@@ -105,10 +106,11 @@ const VO: Cue[] = [
     ],
   },
   // "Click" on the click (scene frame 84).
-  { file: "vo-5", from: AT.oneClick + 9, trimBefore: s(7.1), lines: [[7.2, 10.4, "And then, just one click."]] },
+  { file: "vo-5", from: AT.oneClick + 9, trimBefore: s(7.1), trimAfter: s(10.4), lines: [[7.2, 10.4, "And then, just one click."]] },
   {
     file: "vo-6",
     from: AT.suitability - 10,
+    trimAfter: s(16.6), // tail has two mic knocks (17.5 s, 18.0 s)
     lines: [
       [1.0, 5.3, "GeoWise generates an initial land-use suitability map,"],
       [5.4, 9.9, "complete with area calculations for each recommended zone:"],
@@ -131,6 +133,7 @@ const VO: Cue[] = [
   {
     file: "vo-8",
     from: AT.vision + 100,
+    trimAfter: s(12.1),
     lines: [
       [1.0, 4.1, "Explore your reclamation plan in 3D,"],
       [4.15, 6.85, "projected onto your actual terrain,"],
@@ -140,6 +143,7 @@ const VO: Cue[] = [
   {
     file: "vo-9",
     from: AT.threeD + 200,
+    trimAfter: s(6.6),
     lines: [
       [0.65, 4.6, "See what your land could become 30 years from now."],
       [4.7, 6.4, "Starting today."],
@@ -176,8 +180,8 @@ const SUBTITLES = VO.flatMap((cue) =>
 /**
  * SFX (public/sfx). Natural recordings, CC0 from Freesound via Openverse: wind (klangfabrik),
  * gust (crashoverride6), forest = birds (VKProduktion) + leaves (Garuda1982), rumble (Kinoton,
- * low-passed), click (Masgame), whoosh (Kinoton), swish (qubodup), riser + rush (Henrythetrain),
- * pop (greenvwbeetle), thud (kyles), chime (Jofae). Synthesised: tick, plink, shimmer.
+ * low-passed), click (Masgame), swish (qubodup), riser + rush (Henrythetrain),
+ * pop (greenvwbeetle), thud (kyles), chime (Jofae). Synthesised: tick, plink, shimmer, whoosh + pullback (airy noise swells, no low end).
  * Each cue sits on its animation event, relative to its scene.
  */
 type Sfx = { file: string; at: number; volume: number; len?: number; fadeIn?: number; fadeOut?: number };
@@ -234,7 +238,7 @@ const SFX: Sfx[] = [
   // then a whoosh as the camera pulls back to the wide shot (1:23–1:24).
   ...[80, 200, 352, 440].map((f) => cue("plink", AT.suitability + f, 0.16)),
   cue("chime", AT.suitability + 462, 0.22),
-  cue("whoosh", AT.suitability + 488, 0.18),
+  cue("pullback", AT.suitability + 486, 0.3), // generated: soft airy swoosh for the pull-back
   // Mac flip
   cue("whoosh", AT.flip + 4, 0.3),
   cue("whoosh", AT.flip + 40, 0.3),
