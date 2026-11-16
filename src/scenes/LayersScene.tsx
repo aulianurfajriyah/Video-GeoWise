@@ -166,7 +166,7 @@ const Plane: React.FC<{ layer: Layer; index: number; COLLAPSE: Collapse }> = ({ 
         borderRadius: 18,
         overflow: "hidden",
         background: index === 0 ? theme.planeBase : theme.plane,
-        boxShadow: `0 0 0 2px ${layer.color}66, 0 30px 60px rgba(0,0,0,0.45)`,
+        boxShadow: `0 0 0 2px ${layer.color}66, 0 14px 32px -12px rgba(0,0,0,0.16)`, // soft shadow
       }}
     >
       <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`}>
@@ -197,7 +197,7 @@ const GridOverlay: React.FC<{ COLLAPSE: Collapse }> = ({ COLLAPSE }) => {
         opacity: p,
         borderRadius: 18,
         boxShadow: light
-          ? `0 0 0 3px rgba(29,29,31,0.85), 0 30px 80px rgba(0,0,0,${0.25 * p})`
+          ? `0 0 0 3px rgba(29,29,31,0.85)`
           : `0 0 0 3px rgba(255,255,255,0.85), 0 0 80px rgba(96,165,250,${0.55 * p})`,
       }}
     >
@@ -259,6 +259,9 @@ export const LayersScene: React.FC<{ timing?: { appear: number[]; collapse: Coll
     easing: Easing.bezier(...EASE_OUT),
   });
   const spin = interpolate(frame, [0, timing?.duration ?? 330], [-44, -28]);
+  const gapNow = interpolate(frame, [...COLLAPSE], [64, 0], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
+  const stackLift =
+    (layers.slice(1).reduce((acc, l) => acc + interpolate(frame, [l.appear, l.appear + 26], [0, 1], { ...clamp, easing: Easing.bezier(...EASE_OUT) }), 0) * gapNow) / 2;
   const stackX = interpolate(frame, [COLLAPSE[0], COLLAPSE[1] + 20], [1180, 960], {
     ...clamp,
     easing: Easing.bezier(0.65, 0, 0.35, 1),
@@ -277,7 +280,8 @@ export const LayersScene: React.FC<{ timing?: { appear: number[]; collapse: Coll
         <div
           style={{
             transformStyle: "preserve-3d",
-            transform: `rotateX(58deg) rotateZ(${spin}deg)`,
+            // Re-centred as it grows: each new layer lifts the stack, so shift it back by half its height.
+            transform: `rotateX(58deg) rotateZ(${spin}deg) translateZ(${-stackLift}px)`,
           }}
         >
           {layers.map((l, i) => (

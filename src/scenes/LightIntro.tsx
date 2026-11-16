@@ -1,11 +1,12 @@
 import React from "react";
 import { AbsoluteFill, Easing, interpolate, Sequence, staticFile, useCurrentFrame } from "remotion";
-import { Backdrop, BlurIn } from "../components";
+import { Backdrop } from "../components";
 import { Video } from "@remotion/media";
 import { MacBook } from "../MacBook";
 import { CANVAS, DESK, desktopCamera, MacDesktop, WINDOW_VIDEO } from "./MacDesktop";
 import { HomeWithBoundary } from "./UploadParts";
 import { PIT_GRADE } from "../intro/pitGrade";
+import { FootageCaptions } from "./introCaption";
 import { EASE_OUT, fontFamily } from "../theme";
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
@@ -16,7 +17,7 @@ const DRONE = [0, 540] as const;
  * it pulls back into it. */
 export const REVEAL = DESK.end;
 /** Intro length: a short hold on the MacBook (the next line starts as it lands). */
-export const INTRO_FRAMES = REVEAL + 110;
+export const INTRO_FRAMES = REVEAL + 80;
 /** "Meet GeoWise…" starts as the GeoWise window opens on the desktop. */
 export const MEET_VO_AT = DESK.meetVO;
 
@@ -64,34 +65,6 @@ const PitShot: React.FC<{ shot: (typeof PIT_SHOTS)[number] }> = ({ shot }) => {
   );
 };
 
-
-/** Big white caption over footage, with a soft dark gradient for legibility. */
-const FootageCaption: React.FC<{ lines: string[]; delay: number; out: number }> = ({ lines, delay, out }) => {
-  const frame = useCurrentFrame();
-  const o = interpolate(frame, [out - 18, out], [1, 0], clamp);
-  return (
-    <div style={{ position: "absolute", left: 120, bottom: 130, opacity: o, fontFamily }}>
-      {lines.map((l, i) => (
-        <BlurIn key={l} delay={delay + i * 22} duration={30}>
-          <div
-            style={{
-              color: "#fff",
-              fontSize: i === 0 ? 92 : 56,
-              fontWeight: i === 0 ? 800 : 500,
-              letterSpacing: "-0.03em",
-              lineHeight: 1.1,
-              textShadow: "0 10px 40px rgba(0,0,0,0.55)",
-              marginTop: i === 0 ? 0 : 14,
-              maxWidth: 1250,
-            }}
-          >
-            {l}
-          </div>
-        </BlurIn>
-      ))}
-    </div>
-  );
-};
 
 /* Notification-style file cards stacking in (scattered data). */
 const FILES = [
@@ -166,13 +139,17 @@ export const LightIntroScene: React.FC = () => {
 
   // Drone: slow aerial push-in (continues inside the QuickTime window).
   const droneScale = interpolate(frame, [DRONE[0], DRONE[1]], [1.0, 1.14]);
+  // The captions are part of the footage, so they shrink and minimise with the window.
   const footage = (
-    <AbsoluteFill style={{ scale: droneScale }}>
-      {PIT_SHOTS.map((shot) => (
-        <Sequence key={shot.key} from={shot.from} durationInFrames={shot.len} layout="none">
-          <PitShot shot={shot} />
-        </Sequence>
-      ))}
+    <AbsoluteFill>
+      <AbsoluteFill style={{ scale: droneScale }}>
+        {PIT_SHOTS.map((shot) => (
+          <Sequence key={shot.key} from={shot.from} durationInFrames={shot.len} layout="none">
+            <PitShot shot={shot} />
+          </Sequence>
+        ))}
+      </AbsoluteFill>
+      <FootageCaptions />
     </AbsoluteFill>
   );
 
@@ -218,14 +195,6 @@ export const LightIntroScene: React.FC = () => {
         </AbsoluteFill>
       ) : null}
 
-      {/* Caption shade + captions over the drone; they fade as the window shrinks */}
-      {frame < DESK.start + 16 ? (
-        <AbsoluteFill style={{ background: "linear-gradient(0deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 55%)", opacity: interpolate(frame, [DESK.start, DESK.start + 14], [1, 0], clamp) }} />
-      ) : null}
-      <Sequence name="Drone captions" durationInFrames={DESK.start + 20}>
-        <FootageCaption lines={["Every mine eventually closes."]} delay={30} out={320} />
-        <FootageCaption lines={["What comes next?", "Planning it means juggling scattered data."]} delay={340} out={DESK.start + 14} />
-      </Sequence>
     </AbsoluteFill>
   );
 };

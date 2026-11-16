@@ -98,15 +98,15 @@ const MATCH = {
 };
 
 // The big "Run land-use analysis" button the parameters gather into.
-const PILL = { x: 960, y: 626, w: 660, h: 132 };
+const PILL = { x: 960, y: 540, w: 660, h: 132 }; // frame centre (no title above it)
 
 const PARAM_SPOTS: Record<string, { x: number; y: number }> = {
-  rd: { x: 300, y: 600 },
-  rv: { x: 610, y: 455 },
-  pw: { x: 610, y: 870 },
-  vl: { x: 1310, y: 455 },
-  sl: { x: 1310, y: 870 },
-  el: { x: 1620, y: 600 },
+  rd: { x: 300, y: 520 },
+  rv: { x: 610, y: 340 },
+  pw: { x: 610, y: 740 },
+  vl: { x: 1310, y: 340 },
+  sl: { x: 1310, y: 740 },
+  el: { x: 1620, y: 520 },
 };
 
 // Where the Layers scene leaves the merged stack on its last frame.
@@ -187,7 +187,7 @@ const ParamTile: React.FC<{ layer: Layer; index: number; click: number }> = ({ l
           borderRadius: lerp(18, 26 * (S / TILE), p),
           overflow: "hidden",
           background: `rgba(255,255,255,${fill})`,
-          boxShadow: `0 0 0 ${lerp(2, 7.5, p)}px ${layer.color}88, 0 ${lerp(30, 80, p)}px ${lerp(60, 150, p)}px -${lerp(0, 50, p)}px rgba(0,0,0,${lerp(0.45, 0.35, p)})`,
+          boxShadow: `0 0 0 ${lerp(2, 7.5, p)}px ${layer.color}88`,
           transform: `perspective(2200px) rotateX(${STACK.rotX * (1 - p)}deg) rotateZ(${STACK.rotZ * (1 - p) + floatR}deg) scale(${k})`,
         }}
       >
@@ -275,7 +275,6 @@ export const LightOneClickScene: React.FC = () => {
   const zoom = 1 + (MATCH.scale - 1) * push;
   // Caption carried over from the Layers scene, fading as the stack splits.
   const carry = interpolate(frame, [0, 12], [1, 0], clamp);
-  const titleOut = interpolate(frame, [CARD_AT - 10, CARD_AT + 12], [1, 0], clamp);
 
   // Button morph: big pill → the card's Start Analysis capsule.
   const small = { w: START_BTN_PT.w * CARD_SCALE, h: START_BTN_PT.h * CARD_SCALE };
@@ -327,11 +326,6 @@ export const LightOneClickScene: React.FC = () => {
         }}
       >
         One unified spatial grid
-      </div>
-      <div style={{ position: "absolute", top: 270, width: "100%", textAlign: "center", opacity: titleOut }}>
-        <BlurIn delay={14}>
-          <SilverText size={100}>And then, just one click.</SilverText>
-        </BlurIn>
       </div>
 
       {/* Everything that pushes into scene 4 together */}
@@ -480,12 +474,25 @@ const useCamera = () => {
     let z: number;
     let tx: number;
     let ty: number;
-    if (frame < ZOOM_OUT[0]) {
-      const k = interpolate(frame, [...ZOOM_IN], [0, 1], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
-      z = 1 + (CAM_ZOOM - 1) * k;
-      // screen = stage * z + t ; at k = 1 the focus sits on CAM_TARGET, at k = 0 it is the identity.
-      tx = k * (CAM_TARGET.x - focus.x * z);
-      ty = k * (CAM_TARGET.y - focus.y * z);
+    if (frame < ZOOM_IN[1]) {
+      // Zoom in as a straight zoom about the one point that stays put between the wide shot
+      // (identity) and the framing it lands on, in log scale (no sideways arc).
+      const e = interpolate(frame, [...ZOOM_IN], [0, 1], { ...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1) });
+      const f1 = rec(
+        interpolate(ZOOM_IN[1], fs, CAM_KEYS.map((k) => k.x), { ...clamp, easing: smooth }),
+        interpolate(ZOOM_IN[1], fs, CAM_KEYS.map((k) => k.y), { ...clamp, easing: smooth }),
+      );
+      const t1 = { x: CAM_TARGET.x - f1.x * CAM_ZOOM, y: CAM_TARGET.y - f1.y * CAM_ZOOM };
+      const fx = -t1.x / (CAM_ZOOM - 1);
+      const fy = -t1.y / (CAM_ZOOM - 1);
+      z = Math.exp(lerp(0, Math.log(CAM_ZOOM), e));
+      tx = fx - z * fx;
+      ty = fy - z * fy;
+    } else if (frame < ZOOM_OUT[0]) {
+      // Following the cursor at full zoom: screen = stage * z + t, focus on CAM_TARGET.
+      z = CAM_ZOOM;
+      tx = CAM_TARGET.x - focus.x * z;
+      ty = CAM_TARGET.y - focus.y * z;
     } else {
       // Pull back to the wide shot as a straight zoom about the one point that stays put
       // (no sideways arc); log-scale so the zoom speed feels even.
@@ -629,7 +636,7 @@ export const LightAllocationScene: React.FC = () => {
 };
 
 /* ---------- 4 → 2: close, turn around, open ---------- */
-export const MAC_FLIP_FRAMES = 98;
+export const MAC_FLIP_FRAMES = 122;
 
 /** A 3D MacBook: hinged lid with thickness + aluminium base with keyboard, trackpad and a soft contact shadow. */
 const MacModel: React.FC<{
@@ -824,7 +831,35 @@ const MacModel: React.FC<{
   );
 };
 
-export const LightMacFlip: React.FC = () => {
+/**
+ * Motion blur by averaging a few sub-frame copies with ordinary alpha blending (copy k drawn
+ * at 1/(k+1) over the ones before), so the result is a true average. The additive approach
+ * (each copy at 1/N, summed) rounds every colour channel separately at very low values and
+ * leaves rainbow banding on smooth gradients like the aluminium lid.
+ */
+const SmoothMotionBlur: React.FC<{ samples: number; shutter: number; children: React.ReactNode }> = ({ samples, shutter, children }) => {
+  const frame = useCurrentFrame();
+  return (
+    <AbsoluteFill style={{ isolation: "isolate" }}>
+      {Array.from({ length: samples }, (_, k) => (
+        <AbsoluteFill key={k} style={{ opacity: 1 / (k + 1) }}>
+          <Freeze frame={Math.max(0, frame - (shutter * k) / Math.max(1, samples - 1))}>{children}</Freeze>
+        </AbsoluteFill>
+      ))}
+    </AbsoluteFill>
+  );
+};
+
+export const LightMacFlip: React.FC = () => (
+  <AbsoluteFill style={{ fontFamily }}>
+    <Backdrop />
+    <SmoothMotionBlur samples={6} shutter={0.5}>
+      <MacFlipBody />
+    </SmoothMotionBlur>
+  </AbsoluteFill>
+);
+
+const MacFlipBody: React.FC = () => {
   const frame = useCurrentFrame();
   const io = Easing.bezier(0.65, 0, 0.35, 1);
   const W = MAC_BOX.w;
@@ -842,17 +877,19 @@ export const LightMacFlip: React.FC = () => {
 
   // One continuous move: it starts already moving on frame 0 (picking up beat 4's pull-back
   // under the crossfade, no hold) and lands softly by frame 76, holding only under the
-  // closing crossfade (90–98).
+  // closing crossfade (114–122).
   const lift =
-    frame < 64
+    frame < 88
       ? interpolate(frame, [0, 24], [0, 1], { ...clamp, easing: Easing.bezier(0.25, 0.35, 0.35, 1) })
-      : interpolate(frame, [64, 90], [1, 0], { ...clamp, easing: Easing.bezier(0.45, 0, 0.2, 1) });
+      : interpolate(frame, [88, 114], [1, 0], { ...clamp, easing: Easing.bezier(0.45, 0, 0.2, 1) });
   // Lid folds half way (about 55°), never shut.
-  const half = interpolate(frame, [4, 26, 62, 86], [0, 1, 1, 0], { ...clamp, easing: io });
+  const half = interpolate(frame, [4, 26, 86, 110], [0, 1, 1, 0], { ...clamp, easing: io });
   // One full turn while the lid is half closed: spread over 2 s with a gentle ease, so it
   // peaks at ~9° a frame (a faster turn strobed at 30 fps).
-  const spin = interpolate(frame, [12, 74], [0, 360], { ...clamp, easing: Easing.bezier(0.42, 0, 0.58, 1) });
-  const move = interpolate(frame, [0, 90], [0, 1], { ...clamp, easing: Easing.bezier(0.3, 0.2, 0.2, 1) });
+  // A full turn over ~2.9 s with a gentle ease: at most ~6° a frame, so it reads as smooth motion
+  // at 30 fps without motion blur.
+  const spin = interpolate(frame, [10, 98], [0, 360], { ...clamp, easing: Easing.bezier(0.38, 0, 0.62, 1) });
+  const move = interpolate(frame, [0, 114], [0, 1], { ...clamp, easing: Easing.bezier(0.3, 0.2, 0.2, 1) });
   const left = lerp(from.left, to.left, move);
   const top = lerp(from.top, to.top, move);
   const scale = lerp(1, endScale, move) * (1 - 0.4 * lift);
@@ -872,8 +909,7 @@ export const LightMacFlip: React.FC = () => {
   const D = lidH * 0.92;
 
   return (
-    <AbsoluteFill style={{ fontFamily }}>
-      <Backdrop />
+    <AbsoluteFill>
       {/* Beat 4's badges slide away as the lid starts to fold */}
       <div style={{ position: "absolute", inset: 0, opacity: 1 - badgesOut, transform: `translateX(${badgesOut * 260}px)` }}>
         {ZONES.map((z, i) => (
@@ -911,7 +947,7 @@ export const LightMacFlip: React.FC = () => {
 // the app's view switcher pops up over the (blurred) screen, the cursor taps "Simulation",
 // the screen switches to the simulation view, the camera zooms into the pit until it
 // matches the first frame of the satellite-to-ground clip, and the clip takes over.
-export const VISION_FRAMES = 262; // TAB.clip (168) + the clip to its still end (80) + the 14-frame hold under the dissolve
+export const VISION_FRAMES = 258; // TAB.clip (150) + the clip to its landing (98) + a short rest, then a 6-frame dissolve
 const VISION_MAC = { left: 460, top: 270, w: 1000 };
 const VISION_SCREEN = (() => {
   const bezel = VISION_MAC.w * 0.019;
@@ -931,8 +967,8 @@ const TAB = {
   slide: [86, 106],
   screenSwap: [100, 112],
   dock: [114, 138], // popup shrinks into the screen's own tab bar
-  toCrop: [132, 168], // zoom into the pit until the frame matches the clip's first frame
-  clip: 168, // hard cut to the satellite-to-ground clip (5 s; ground holds still from ~3 s)
+  toCrop: [112, 150], // zoom into the pit (long enough that it never has to brake hard before the clip) until the frame matches the clip's first frame
+  clip: 150, // cut to the satellite-to-ground clip (3 s, no holds)
 } as const;
 const TAB_LABELS = ["Land-Use Allocation", "Comparison", "Simulation"];
 const POPUP = { w: 1080, h: 116, pad: 8, cx: 960, cy: 560 };
@@ -949,26 +985,30 @@ const belowMenu: React.CSSProperties = {
 /** The tab bar inside the Simulation screenshot (fractions of the screen). */
 const SCREEN_TABS = { cx: 0.499, cy: MENU + (1 - MENU) * (35 / 1255), w: 0.2925 };
 /** The clip's first frame is this crop of the Simulation screenshot (screenshot px, 2000×1255). */
-const CLIP_CROP = { x: 473, y: 480, w: 994, h: 560 };
-/** Satellite → ground → plant-level view, pre-built as one 30 fps clip (83 frames):
- * the satellite dive from clip frame 19 (already 1.30× in, entered at 1.5×), its slow
- * ground-level tail sped up 5–9× so it never stalls, then the ground-to-plant clip (24 → 30 fps,
- * 0.85×), which tips up from the ground to the simulation's own low view. */
+/** The AI clip (transition2) opens on ai/start_frame_simulation.png — the 900 × 506 crop at
+ * (550, 463) — reframed 1.036× wider, so the camera lands on that wider crop. */
+const CLIP_CROP = { x: 534, y: 454, w: 932, h: 524 };
+/** Satellite → ground → plant-level view, pre-built as one 30 fps clip (124 frames): the
+ * AI dive from the Simulation screen (transition2, 24 → 30 fps at 2×, close to our zoom's speed), its slow ground-level
+ * tail sped up 4× so it never stalls, a short dissolve into the ground-to-plant clip
+ * (transition-ground-plant-2, 24 → 30 fps at 1×), which tips up to the simulation's low view. */
 const SATELLITE_CLIP = "seedance/satellite_to_plant.mp4";
 /** Clip frame where the tip-up has come to rest; the clip holds it under the dissolve. */
-const CLIP_REST = 80;
-const CLIP_TRIM_SCALE = 1.3;
+const CLIP_REST = 98;
+/** The clip is entered on its first frame (it is already moving there). */
+const CLIP_TRIM_SCALE = 1;
 /** Zoom speed of the clip's first frames (log-scale per frame), matched by our zoom in. */
-const CLIP_ZOOM_RATE = 0.045;
+const CLIP_ZOOM_RATE = 0.11; // the dive is re-timed to this steady speed (log-scale per frame) until it eases out
 /** The clip's resting frame vs the simulation's first (as beat 6 shows it, cover-fitted at 1×):
- * same hill and rocks, framed differently — best match (gradient correlation on the ridge and
- * rocks) is the clip scaled 1.04× / 1.12× about the centre and moved 24 px right, 8 px up.
+ * same hill and rocks, framed differently — best uniform match (gradient correlation 0.88 on the
+ * ridge and rocks; uniform so the picture never stretches) is the clip scaled 1.08× about the
+ * centre and moved 56 px right, 32 px up.
  * The clip eases into that alignment as its tip-up settles, then both hold still while they
  * dissolve, so the view lands exactly on the simulation's. */
-const CLIP_ALIGN = { sx: 1.04, sy: 1.12, tx: 24, ty: -8, frames: [168 + 56, 168 + CLIP_REST] as const };
+const CLIP_ALIGN = { sx: 1.08, sy: 1.08, tx: 56, ty: -32, frames: [150 + CLIP_REST - 20, 150 + CLIP_REST] as const };
 const CLIP_DISSOLVE = 4;
-/** Beat 2 (254 frames) overlaps beat 5 by an 8-frame fade, so beat 5's frame 0 is beat 2's frame 246. */
-const INTEGRATED_FRAMES = 254;
+/** Beat 2 (196 frames) overlaps beat 5 by an 8-frame fade, so beat 5's frame 0 is beat 2's frame 188. */
+const INTEGRATED_FRAMES = 196;
 const INTO_VISION_FADE = 8;
 const INTEGRATED_AT_START = INTEGRATED_FRAMES - INTO_VISION_FADE;
 
@@ -1066,8 +1106,9 @@ export const LightVisionScene: React.FC = () => {
   const io = Easing.bezier(0.65, 0, 0.35, 1);
 
   // Popup: spring in, then dock into the screenshot's own tab bar.
-  const popIn = interpolate(frame, [TAB.popIn, TAB.popIn + 18], [0, 1], { ...clamp, easing: Easing.bezier(0.34, 1.56, 0.64, 1) });
-  const popFade = interpolate(frame, [TAB.popIn, TAB.popIn + 8], [0, 1], clamp);
+  // Grows and fades in together with one soft ease (no overshoot), in step with the blur.
+  const popIn = interpolate(frame, [TAB.popIn - 2, TAB.popIn + 20], [0, 1], { ...clamp, easing: Easing.bezier(0.25, 0.1, 0.25, 1) });
+  const popFade = interpolate(frame, [TAB.popIn - 2, TAB.popIn + 12], [0, 1], { ...clamp, easing: Easing.bezier(0.33, 0, 0.67, 1) });
   const dock = interpolate(frame, [...TAB.dock], [0, 1], { ...clamp, easing: io });
   const dockX = VISION_SCREEN.x + VISION_SCREEN.w * SCREEN_TABS.cx;
   const dockY = VISION_SCREEN.y + VISION_SCREEN.h * SCREEN_TABS.cy;
@@ -1139,11 +1180,11 @@ export const LightVisionScene: React.FC = () => {
           width: "100%",
           textAlign: "center",
           zIndex: 2,
-          opacity: interpolate(frame, [TAB.dock[0] + 4, TAB.toCrop[0]], [1, 0], clamp),
+          opacity: interpolate(frame, [TAB.toCrop[0] - 6, TAB.toCrop[0] + 8], [1, 0], clamp),
         }}
       >
         <BlurIn delay={10}>
-          <SilverText size={88}>But the vision doesn’t stop at a map.</SilverText>
+          <SilverText size={88}>Beyond the map.</SilverText>
         </BlurIn>
       </div>
       {/* Camera: zooms into the pit on the screen */}
@@ -1252,8 +1293,8 @@ const GROW_RATE = (GROW_CLIP[1] - GROW_CLIP[0]) / GROW_FRAMES;
 /** Tilt up to the sky after the forest has grown; the scene ends shortly after. */
 /** The forest holds while "See what your land could become 30 years from now" is read;
  * the tilt to the sky starts on "Starting today". */
-const SKY_PAN = [345, 405] as const;
-export const THREED_FRAMES = 420;
+const SKY_PAN = [340, 400] as const;
+export const THREED_FRAMES = 415;
 const SKY = "#AAD0EC"; // the clip's sky at its top edge
 /** The simulation opens framed 1.3× (anchored at the centre of the ground line) so the grown
  * trees fill the frame — beat 5's clip lands on exactly this framing — then creeps in slowly
@@ -1272,9 +1313,9 @@ const SKY_HIGH = "#DCEBF6";
 const GROW_LAST = Math.floor((180 - GROW_CLIP[0] - 1) / GROW_RATE);
 /** The simulation holds its first frame while beat 5's clip dissolves into it (same view, both
  * still), then the growth starts. */
-const GROW_HOLD = 14;
+const GROW_HOLD = 6;
 /** Scene frame where the Year counter reaches 30 (1:41 in the light cut). */
-const YEAR_30_AT = 339;
+const YEAR_30_AT = 334;
 const growthFill: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%" };
 
 export const LightThreeDScene: React.FC = () => {

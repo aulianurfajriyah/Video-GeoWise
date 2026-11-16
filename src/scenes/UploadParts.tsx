@@ -1,5 +1,5 @@
 import React from "react";
-import { Easing, Img, interpolate, staticFile } from "remotion";
+import { Easing, Img, interpolate, staticFile, useCurrentFrame } from "remotion";
 import { fontFamily } from "../theme";
 import { SITE_PATH, SITE_SHAPE } from "../siteShape";
 import { ZONE_MAP, ZONE_POLYGONS } from "../zoneMap";
@@ -285,12 +285,34 @@ export const flightPose = (i: number, p: number) => {
  */
 /**
  * Highlight of the uploaded site (site_1.shp) for `p` 0 → 1: a bright line traces the
- * boundary, the site fills and glows, a ring ripples out, then it settles to a soft tint.
+ * boundary, the site flashes and a ring ripples out, then the fill clears and the outline stays,
+ * with a shimmer running along it.
  */
+/** A short bright highlight travelling round an outline (pathLength 1). */
+const Shimmer: React.FC<{ d: string; color: string; width: number; opacity: number; speed?: number; offset?: number }> = ({ d, color, width, opacity, speed = 0.012, offset = 0 }) => {
+  const frame = useCurrentFrame();
+  return (
+    <path
+      d={d}
+      pathLength={1}
+      fill="none"
+      stroke={color}
+      strokeWidth={width}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeDasharray="0.09 0.91"
+      strokeDashoffset={-(frame * speed + offset)}
+      strokeOpacity={opacity}
+      style={{ filter: `drop-shadow(0 0 10px ${color})` }}
+    />
+  );
+};
+
 const SiteHighlight: React.FC<{ p: number }> = ({ p }) => {
   const draw = interpolate(p, [0, 0.42], [0, 1], { ...clamp, easing: Easing.bezier(0.45, 0, 0.3, 1) });
   const flash = interpolate(p, [0.38, 0.55, 1], [0, 1, 0], clamp);
-  const fill = interpolate(p, [0.35, 0.55, 1], [0, 0.42, 0.14], clamp);
+  const fill = interpolate(p, [0.35, 0.55, 0.85], [0, 0.42, 0], clamp);
+  const shimmer = interpolate(p, [0.5, 0.7], [0, 1], clamp);
   const ring = interpolate(p, [0.45, 0.9], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   return (
     <svg viewBox={`0 0 ${SITE_SHAPE.w} ${SITE_SHAPE.h}`} style={{ position: "absolute", top: "7%", height: "86%", aspectRatio: "1976 / 1454", left: "50%", translate: "-50% 0px", overflow: "visible" }}>
@@ -315,10 +337,11 @@ const SiteHighlight: React.FC<{ p: number }> = ({ p }) => {
           strokeLinejoin="round"
           strokeLinecap="round"
           strokeDasharray={`${draw} 1`}
-          strokeOpacity={interpolate(p, [0, 0.05, 0.75, 1], [0, 1, 1, 0], clamp)}
+          strokeOpacity={interpolate(p, [0, 0.05, 0.75, 1], [0, 1, 1, 0.75], clamp)}
           style={{ filter: `drop-shadow(0 0 ${10 + 18 * flash}px rgba(255,212,59,0.95))` }}
         />
       ) : null}
+      {shimmer > 0 ? <Shimmer d={SITE_PATH} color="#FFF6C2" width={11} opacity={shimmer} /> : null}
     </svg>
   );
 };
@@ -332,8 +355,9 @@ const MAP_CLIP = { x: 52.2, y: 237.9, w: 1877.6, h: 1093.6, r: 30 };
 /** On "the mining permit areas": the green IUP area pulses and its dashed edge glows. */
 const PermitHighlight: React.FC<{ p: number }> = ({ p }) => {
   const draw = interpolate(p, [0, 0.45], [0, 1], { ...clamp, easing: Easing.bezier(0.45, 0, 0.3, 1) });
-  const fill = interpolate(p, [0.1, 0.45, 1], [0, 0.34, 0.14], clamp);
+  const fill = interpolate(p, [0.1, 0.45, 0.85], [0, 0.34, 0], clamp);
   const glow = interpolate(p, [0.3, 0.5, 1], [0, 1, 0.35], clamp);
+  const shimmer = interpolate(p, [0.5, 0.7], [0, 1], clamp);
   return (
     <svg viewBox="0 0 1976 1454" style={{ position: "absolute", top: "7%", height: "86%", aspectRatio: "1976 / 1454", left: "50%", translate: "-50% 0px", overflow: "visible" }}>
       <defs>
@@ -357,6 +381,7 @@ const PermitHighlight: React.FC<{ p: number }> = ({ p }) => {
             style={{ filter: `drop-shadow(0 0 ${6 + 14 * glow}px rgba(46,158,91,0.95))` }}
           />
         ))}
+        {shimmer > 0 ? IUP_EDGES.map((d, i) => <Shimmer key={`s${d}`} d={d} color="#D9FFE8" width={10} opacity={shimmer} speed={0.016} offset={i * 0.5} />) : null}
       </g>
     </svg>
   );

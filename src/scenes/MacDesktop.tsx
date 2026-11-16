@@ -1,3 +1,4 @@
+import { drawStillCaption, StillCaption } from "./introCaption";
 import React from "react";
 import { AbsoluteFill, continueRender, delayRender, Easing, Img, interpolate, staticFile, useCurrentFrame } from "remotion";
 import { Freeze, Sequence } from "remotion";
@@ -41,7 +42,7 @@ export const DESK = {
   title: [552, 814, 834] as const, // "Meet GeoWise." on the desktop: in, out start, out end
   continueClick: 828,
   popup: [832, 856] as const, // the Create a Mining Site sheet slides up
-  typing: [842, 872] as const, // project name typed in
+  typing: [924, 984] as const, // project name typed in, in view while the cards wait in the folder
   toFolder: [862, 890] as const, // camera onto the folder
   uploadVO: 878, // "Simply upload the data you already have…"
   folderClick: 880, // single click opens it
@@ -290,6 +291,7 @@ const useWindowSnapshot = () => {
       g.textBaseline = "middle";
       g.fillText("Tumpang Pitu — drone.mov", WIN.w / 2, WIN.title / 2);
       g.drawImage(img, 0, WIN.title, WIN.w, VIDEO_H);
+      drawStillCaption(g, 0, WIN.title, WIN.w);
       g.restore();
       setSnap(c);
       continueRender(handle);
@@ -411,7 +413,7 @@ export const MacDesktop: React.FC<{ footage: React.ReactNode }> = ({ footage }) 
   const form = {
     frame,
     typed: name.slice(0, typedN),
-    caret: frame >= DESK.typing[0] && frame < DESK.toFolder[1] && Math.floor(frame / 8) % 2 === 0,
+    caret: frame >= DESK.popup[1] && frame < DESK.typing[1] + 10 && Math.floor(frame / 8) % 2 === 0,
     filled,
     detecting: frame >= DESK.detect[0] && frame < DESK.detect[1] ? 1 : 0,
     detected: interpolate(frame, [DESK.detect[1], DESK.detect[1] + 12], [0, 1], clamp),
@@ -461,7 +463,16 @@ export const MacDesktop: React.FC<{ footage: React.ReactNode }> = ({ footage }) 
       {!minimized ? (
         <div style={{ position: "absolute", left: WIN.x, top: WIN.y, width: WIN.w, height: WIN_H, boxShadow: "0 40px 90px -20px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.25)", borderRadius: 14 }}>
           <WindowChrome>
-            {frame >= DESK.minimize ? <Img src={staticFile("intro/window_still.jpg")} style={{ width: WIN.w, height: VIDEO_H }} /> : footage}
+            {frame >= DESK.minimize ? (
+              <div style={{ position: "relative", width: WIN.w, height: VIDEO_H }}>
+                <Img src={staticFile("intro/window_still.jpg")} style={{ width: WIN.w, height: VIDEO_H }} />
+                <div style={{ position: "absolute", left: 0, top: 0, width: 1920, height: 1080, transformOrigin: "0 0", scale: WIN.w / 1920 }}>
+                  <StillCaption />
+                </div>
+              </div>
+            ) : (
+              footage
+            )}
           </WindowChrome>
         </div>
       ) : genie < 1 ? (

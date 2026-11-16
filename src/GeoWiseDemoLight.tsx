@@ -27,12 +27,12 @@ const DUR = {
   oneClick: 250,
   suitability: 525,
   flip: MAC_FLIP_FRAMES,
-  integrated: 254,
+  integrated: 196, // ends ~0.8 s after "one integrated analysis"
   vision: VISION_FRAMES,
   threeD: THREED_FRAMES,
   outro: 213, // trimmed so the cut is exactly 2:00
 };
-const FADE = { intro: 15, oneClick: 25, suitability: 0, flip: 8, integrated: 8, vision: 14, threeD: 24 };
+const FADE = { intro: 15, oneClick: 25, suitability: 0, flip: 8, integrated: 8, vision: 6, threeD: 24 };
 
 /* Where each scene starts in the composition. */
 const AT = (() => {
@@ -66,9 +66,9 @@ const VO: Cue[] = [
     from: 50,
     trimAfter: s(11.4),
     lines: [
-      [1.0, 4.1, "Every mine has an expiration date,"],
-      [4.2, 7.7, "but when operations come to an end,"],
-      [8.3, 11.0, "what should the post-mining land become?"],
+      [1.0, 4.6, "Every mine has an expiration date,"],
+      [5.1, 7.4, "but when operations come to an end,"],
+      [8.3, 10.9, "what the post-mining land should become?"],
     ],
   },
   // "Meet GeoWise…" as the GeoWise window opens on the desktop.
@@ -96,13 +96,14 @@ const VO: Cue[] = [
   // Each layer appears on its word.
   {
     file: "vo-4",
-    from: AT.layers - 94,
-    trimAfter: s(14.5),
+    // The 1 s pause between "It" and "brings" is cut out of the recording.
+    from: AT.layers - 64,
+    trimAfter: s(13.5),
     lines: [
-      [0.4, 3.3, "It brings together"],
-      [3.5, 6.9, "road, river, power line,"],
-      [7.0, 10.5, "village, slope, elevation,"],
-      [10.9, 14.4, "all aligned within a unified spatial grid."],
+      [0.4, 2.3, "It brings together"],
+      [2.5, 5.9, "road, river, power line,"],
+      [6.0, 9.5, "village, slope, elevation,"],
+      [9.9, 13.4, "all aligned within a unified spatial grid."],
     ],
   },
   // "Click" on the click (scene frame 84).
@@ -132,6 +133,7 @@ const VO: Cue[] = [
   // "Actual terrain" lands on the ground tilt.
   {
     file: "vo-8",
+    // "actual terrain" lands as the camera tips up from the ground to the terrain.
     from: AT.vision + 100,
     trimAfter: s(12.1),
     lines: [
@@ -142,7 +144,7 @@ const VO: Cue[] = [
   },
   {
     file: "vo-9",
-    from: AT.threeD + 200,
+    from: AT.threeD + 201,
     trimAfter: s(6.6),
     lines: [
       [0.65, 4.6, "See what your land could become 30 years from now."],
@@ -207,7 +209,7 @@ const SFX: Sfx[] = [
   cue("shimmer", DESK.permit[0], 0.3), // permit area lights up
   cue("click", DESK.continueClick, 0.38),
   cue("swish", DESK.popup[0], 0.22),
-  ...Array.from({ length: 10 }, (_, i) => cue("tick", DESK.typing[0] + i * 3, 0.05)),
+  ...Array.from({ length: 12 }, (_, i) => cue("tick", DESK.typing[0] + i * 5, 0.05)),
   cue("click", DESK.folderClick, 0.35),
   cue("whoosh", DESK.folderOpen[0], 0.18),
   ...DESK.flights.map(([f0]) => cue("swish", f0 + 2, 0.3)),
@@ -249,14 +251,14 @@ const SFX: Sfx[] = [
   cue("click", AT.vision + 84, 0.4),
   cue("swish", AT.vision + 86, 0.25),
   cue("riser", AT.vision + 102, 0.38),
-  cue("rush", AT.vision + 165, 0.5),
+  cue("rush", AT.vision + 147, 0.5),
   // 3D growth: forest comes alive; species tiles pop in and land; overlays whisk away; wind on the tilt up
-  cue("forest", AT.threeD, 0.55, { len: 420, fadeIn: 60, fadeOut: 70 }),
+  cue("forest", AT.threeD, 0.55, { len: 415, fadeIn: 60, fadeOut: 70 }),
   ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => cue("tick", AT.threeD + 70 + i * 5, 0.14)),
   ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => cue("plink", AT.threeD + SPECIES_LAND(i) - 1, 0.22)),
-  cue("swish", AT.threeD + 315, 0.3),
-  cue("swish", AT.threeD + 322, 0.25),
-  cue("gust", AT.threeD + 325, 0.35, { len: 170, fadeIn: 20, fadeOut: 60 }),
+  cue("swish", AT.threeD + 310, 0.3),
+  cue("swish", AT.threeD + 317, 0.25),
+  cue("gust", AT.threeD + 320, 0.35, { len: 170, fadeIn: 20, fadeOut: 60 }),
   // End card
   cue("pop", AT.outro + 6, 0.4),
   cue("shimmer", AT.outro + 20, 0.45),
@@ -318,7 +320,7 @@ const Subtitles: React.FC = () => {
     extrapolateRight: "clamp",
   });
   return (
-    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 30, pointerEvents: "none" }}>
+    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 80, pointerEvents: "none" }}>
       <div
         style={{
           opacity: o,
@@ -382,7 +384,14 @@ export const GeoWiseDemoLight: React.FC = () => {
             <LightVisionScene />
           </TransitionSeries.Sequence>
           <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: FADE.vision })} />
-          <TransitionSeries.Sequence name="6 · 3D & growth" premountFor={60} durationInFrames={DUR.threeD}>
+          <TransitionSeries.Sequence
+            name="6 · 3D & growth"
+            premountFor={60}
+            durationInFrames={DUR.threeD}
+            style={{
+              scale: "0.986 1"
+            }}
+          >
             <LightThreeDScene />
           </TransitionSeries.Sequence>
           <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: FADE.threeD })} />
